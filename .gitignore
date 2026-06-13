@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+.sandeval/config.json
+.sandeval/runs/
+.sandeval/reports/
+.sandeval/storage/
+.DS_Store

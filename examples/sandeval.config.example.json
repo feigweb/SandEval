@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "defaultModel": "mock/mock-agent",
+  "judgeModel": "mock/mock-agent",
+  "sandbox": {
+    "mode": "local",
+    "root": ".sandeval/runs",
+    "commandTimeoutMs": 120000,
+    "network": false,
+    "preserveRuns": 50,
+    "copyTaskFiles": false
+  },
+  "agent": {
+    "maxTurns": 12,
+    "toolTimeoutMs": 120000,
+    "autoRunVerification": true
+  },
+  "scoring": {
+    "enabled": true,
+    "minScore": 0,
+    "maxScore": 100
+  },
+  "storage": {
+    "kind": "filesystem",
+    "root": ".sandeval/storage",
+    "indexFile": "runs.jsonl"
+  },
+  "ui": {
+    "theme": "sand",
+    "pageSize": 12,
+    "showRawUsage": false,
+    "confirmBeforeRun": false
+  },
+  "reportDir": ".sandeval/reports",
+  "contexts": [
+    {
+      "name": "workspace",
+      "path": ".",
+      "description": "Current project workspace",
+      "exclude": ["node_modules", "dist", ".git", ".sandeval", "package-lock.json"],
+      "maxFiles": 40,
+      "maxFileBytes": 12000
+    }
+  ],
+  "models": [
+    {
+      "name": "mock",
+      "provider": "mock",
+      "kind": "mock",
+      "model": "mock-agent",
+      "modelIds": ["mock-agent"]
+    },
+    {
+      "name": "openai",
+      "provider": "openai",
+      "kind": "openai-compatible",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "model": "gpt-5.4",
+      "modelIds": ["gpt-5.4", "gpt-4.1"],
+      "temperature": 0.2,
+      "auth": {
+        "type": "api-key",
+        "apiKeyEnv": "OPENAI_API_KEY"
+      }
+    },
+    {
+      "name": "anthropic",
+      "provider": "anthropic",
+      "kind": "anthropic-compatible",
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "model": "claude-sonnet-4-5",
+      "modelIds": ["claude-sonnet-4-5", "claude-opus-4-1"],
+      "temperature": 0.2,
+      "auth": {
+        "type": "api-key",
+        "apiKeyEnv": "ANTHROPIC_API_KEY"
+      }
+    },
+    {
+      "name": "gemini",
+      "provider": "gemini",
+      "kind": "gemini-compatible",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+      "apiKeyEnv": "GEMINI_API_KEY",
+      "model": "gemini-2.5-pro",
+      "modelIds": ["gemini-2.5-pro", "gemini-2.5-flash"],
+      "temperature": 0.2,
+      "auth": {
+        "type": "api-key",
+        "apiKeyEnv": "GEMINI_API_KEY"
+      }
+    },
+    {
+      "name": "claude-code",
+      "provider": "claude-code",
+      "kind": "command",
+      "model": "claude-code",
+      "modelIds": ["claude-sonnet-4-5", "claude-opus-4-1"],
+      "command": "claude",
+      "args": ["-p", "{{task}}", "--output-format", "json"],
+      "protocol": "plain-final",
+      "timeoutMs": 600000,
+      "auth": {
+        "type": "command",
+        "loginCommand": "claude",
+        "loginArgs": ["login"],
+        "checkCommand": "claude",
+        "checkArgs": ["--version"]
+      }
+    },
+    {
+      "name": "codex-cli",
+      "provider": "codex",
+      "kind": "command",
+      "model": "codex-cli",
+      "modelIds": ["gpt-5.4", "gpt-4.1"],
+      "command": "codex",
+      "args": ["exec", "--json", "{{task}}"],
+      "protocol": "plain-final",
+      "timeoutMs": 600000,
+      "auth": {
+        "type": "command",
+        "loginCommand": "codex",
+        "loginArgs": ["login"],
+        "checkCommand": "codex",
+        "checkArgs": ["--version"]
+      }
+    },
+    {
+      "name": "anthropic-via-claude-token",
+      "provider": "claude-token",
+      "kind": "anthropic-compatible",
+      "baseUrl": "https://api.anthropic.com",
+      "model": "claude-sonnet-4-5",
+      "modelIds": ["claude-sonnet-4-5"],
+      "auth": {
+        "type": "command-token",
+        "tokenCommand": "claude",
+        "tokenArgs": ["auth", "token"]
+      }
+    },
+    {
+      "name": "custom-provider",
+      "provider": "custom",
+      "kind": "custom",
+      "model": "custom-provider",
+      "modulePath": "./sandeval-provider.js",
+      "exportName": "createProvider",
+      "options": {}
+    }
+  ]
+}
