@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, render, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import Spinner from "ink-spinner";
+import { generateModelScoreDashboard } from "./analytics.js";
 import { runArena } from "./arena.js";
 import { packageArenaArtifacts, packageRunArtifacts } from "./artifacts.js";
 import { loginModel } from "./auth.js";
@@ -325,6 +326,29 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
     }
   }
 
+  async function generateScoreDashboard(modelName?: string) {
+    const resolvedModel = modelName ?? resolveResultModel(state.result, state.resultMode, state.selectedModel);
+    if (!resolvedModel) {
+      setState((current) => ({ ...current, status: "Select a model before generating a score dashboard" }));
+      return;
+    }
+    setState((current) => ({ ...current, busy: true, status: `Generating score dashboard for ${resolvedModel}` }));
+    try {
+      const dashboard = await generateModelScoreDashboard({
+        config,
+        cwd: props.cwd,
+        modelName: resolvedModel
+      });
+      setState((current) => ({
+        ...current,
+        busy: false,
+        status: `Score dashboard ready: ${dashboard.htmlPath}`
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, busy: false, error: stringifyError(error), screen: "error" }));
+    }
+  }
+
   async function scoreCurrentResult(review: string) {
     if (!state.result) {
       return;
@@ -417,6 +441,7 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
         onLogin={loginSelected}
         onPackage={packageCurrentArtifacts}
         onScore={() => scoreCurrentResult(state.reviewDraft)}
+        onDashboard={generateScoreDashboard}
       />
     );
   } else if (state.screen === "run") {
@@ -448,6 +473,7 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
         setReviewDraft={(reviewDraft) => setState((current) => ({ ...current, reviewDraft }))}
         onPackage={packageCurrentArtifacts}
         onScore={scoreCurrentResult}
+        onDashboard={generateScoreDashboard}
         onBackHome={() => go("run")}
       />
     );
@@ -531,6 +557,7 @@ function CommandPalette(props: {
   onLogin: (model: string) => void;
   onPackage: () => void;
   onScore: () => void;
+  onDashboard: (modelName?: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
@@ -584,6 +611,11 @@ function CommandPalette(props: {
     { label: "Login provider", hint: "auth", run: () => props.setView("login") },
     { label: "Package artifacts", hint: props.state.result ? "current result" : "no result", run: () => { close(); props.onPackage(); } },
     { label: "Review and score", hint: props.state.result ? "current result" : "no result", run: () => { close(); props.onScore(); } },
+    {
+      label: "Generate score dashboard",
+      hint: resolveResultModel(props.state.result, props.state.resultMode, props.state.selectedModel) || "select model",
+      run: () => { close(); props.onDashboard(); }
+    },
     { label: "Show workflow output", hint: "events", run: () => { close(); props.onGo("workflow"); } },
     { label: "Open config summary", hint: "config", run: () => { close(); props.onGo("config"); } }
   ];
@@ -1179,11 +1211,12 @@ function ResultScreen(props: {
   setReviewDraft: (value: string) => void;
   onPackage: () => void;
   onScore: (review: string) => void;
+  onDashboard: (modelName?: string) => void;
   onBackHome: () => void;
 }) {
   const [actionIndex, setActionIndex] = useState(0);
   const [isReviewing, setIsReviewing] = useState(false);
-  const actions = ["Package artifacts", "Review & score", "Back home"];
+  const actions = ["Package artifacts", "Review & score", "Score dashboard", "Back home"];
 
   useInput((input, key) => {
     if (isReviewing) {
@@ -1205,7 +1238,8 @@ function ResultScreen(props: {
     if (key.return) {
       if (actionIndex === 0) props.onPackage();
       if (actionIndex === 1) setIsReviewing(true);
-      if (actionIndex === 2) props.onBackHome();
+      if (actionIndex === 2) props.onDashboard(resolveResultModel(props.result, props.mode, undefined));
+      if (actionIndex === 3) props.onBackHome();
     }
   });
 
@@ -1680,6 +1714,19 @@ function requiresInteractivePlanApproval(config: SandEvalConfig): boolean {
 
 function resolveReportDir(config: SandEvalConfig, cwd: string): string {
   return config.reportDir?.startsWith("/") ? config.reportDir : `${cwd}/${config.reportDir ?? ".sandeval/reports"}`;
+}
+
+function resolveResultModel(result: RunReport | ArenaReport | undefined, mode: RunMode | undefined, fallback: string | undefined): string | undefined {
+  if (result && mode === "single" && "run" in result) {
+    return result.run.modelName;
+  }
+  if (result && "results" in result) {
+    if (fallback && result.results.some((item) => item.run.modelName === fallback)) {
+      return fallback;
+    }
+    return result.results[0]?.run.modelName ?? fallback;
+  }
+  return fallback;
 }
 
 function formatTime(iso: string): string {

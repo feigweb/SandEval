@@ -2,33 +2,16 @@
 
 SandEval is a CLI/TUI tool for evaluating coding agents in a sandboxed workspace. A configured model receives a task, creates artifacts through tool calls, runs its own verification commands, and returns a report with artifacts, command output, token usage, elapsed time, human feedback, and judge-model scoring.
 
-The current implementation is an MVP foundation:
+## What You Can Do
 
-- OpenAI-compatible chat completions
-- Anthropic-compatible messages API
-- Gemini-compatible generateContent API
-- Model selection as `<provider>/<model-id>`, such as `openai/gpt-5.4`
-- Command-token auth for using Codex or Claude Code credentials with API model providers
-- Command adapters for tools such as Claude Code, Codex CLI, or custom runners
-- Command adapter workflow hints for Claude Code and Codex CLI
-- Compact workflow timelines with repeated tool/file/command events folded in the TUI
-- Custom provider modules
-- Filesystem or custom storage modules
-- Local, container, Linux command, or external sandbox command backends
-- Ollama and LM Studio local model presets through OpenAI-compatible endpoints
-- Separate tool permissions for files, shell, Git, package managers, and remote Git/network boundaries
-- Prompted or enforced Plan mode, with optional interactive approval for enforced plans
-- Project contexts with `@context` mentions, copied into each sandbox under `@context/<name>`
-- Task-level Skills triggered with `@skill:name` or `@skill:{name}`
-- Configurable Rules injected into the agent system prompt
-- Richer project tools: file search, file replacement, file reads/writes, directory listing, and command execution
-- Single-model runs and Arena runs
-- Arena concurrency controls for faster multi-model runs
-- Component-based Ink TUI with a workspace-first flow, `Ctrl+K` command palette, model picking, Arena multi-select, login, config, history, and result panels
-- Post-run artifact packaging from sandbox workspaces into the current directory
-- Optional post-run human review and judge scoring from the result screen
-- Multi-dimensional judge scoring with a weighted overall score
-- JSON and Markdown reports
+- Run one model or an Arena of models against the same task.
+- Evaluate artifacts with a judge model, optional human review, and weighted score dimensions.
+- Generate a score index and self-contained Chart HTML dashboard once a model has at least two scored reviews.
+- Use the SDK from application code for sandbox runs, Arena runs, history, scoring indexes, and dashboards.
+- Work interactively in the Ink TUI with a workspace-first composer and `Ctrl+K` command palette.
+- Configure OpenAI-compatible, Anthropic-compatible, Gemini-compatible, command, custom, Ollama, and LM Studio providers.
+- Run agents inside local, Docker, Podman, Linux sandbox, or external sandbox backends.
+- Attach project contexts with `@workspace`, trigger Skills with `@skill:name`, and inject reusable Rules.
 
 ## Quick Start
 
@@ -46,6 +29,59 @@ node dist/cli.js tui
 In the TUI, SandEval opens directly into the run workspace. Use `Ctrl+K` for the command palette: switch Single/Arena mode, choose models, select contexts, toggle Skills and Rules, toggle scoring, change sandbox/tool settings, open history, login providers, package artifacts, or score a result. Type `@workspace` to attach a context and `@skill:verification` or `@skill:{tui-design}` to attach a Skill. Generation runs from the workspace with Enter.
 
 `sandeval init` creates `.sandeval/config.json`. The generated config defaults to the OpenAI provider, not mock mode. A deterministic `mock/mock-agent` model is still included for CI or smoke tests, but SandEval only allows it for JSON CLI runs and hides it from the TUI because it produces fixed test artifacts rather than following arbitrary prompts.
+
+## Common Commands
+
+```bash
+sandeval init
+sandeval config wizard
+sandeval config show
+sandeval config get sandbox.mode
+sandeval config set tools.gitRemote true
+sandeval login codex-cli
+sandeval auth
+
+sandeval run task.md --model openai/gpt-5.4 --judge openai/gpt-5.4
+sandeval run --prompt "Build a CLI calculator" --review "Works, but lacks tests"
+sandeval arena task.md --models openai/gpt-5.4,anthropic/claude-sonnet-4-5,gemini/gemini-2.5-pro
+sandeval arena --prompt "Build a tiny Vite app" --models openai/gpt-5.4,ollama/qwen2.5-coder:latest --concurrency 2
+
+sandeval history
+sandeval score-index openai/gpt-5.4
+sandeval score-index openai/gpt-5.4 --output-dir reports/model-panels --json
+sandeval tui
+```
+
+`score-index` scans stored scored reports, de-duplicates repeated saves of the same run, and requires at least two scored reviews for the requested model. It writes an HTML dashboard under `.sandeval/dashboards` by default.
+
+## SDK Usage
+
+SandEval can be embedded in Node.js code. The SDK uses the same config, sandbox, report, and storage paths as the CLI.
+
+```ts
+import { createSandEval } from "sandeval";
+
+const sandeval = await createSandEval({ cwd: process.cwd() });
+
+const report = await sandeval.run({
+  prompt: "Create a tiny Node script that prints ok",
+  modelName: "openai/gpt-5.4",
+  judgeName: "openai/gpt-5.4"
+});
+
+console.log(report.score?.score);
+
+const arena = await sandeval.arena({
+  prompt: "Build a minimal landing page",
+  models: ["openai/gpt-5.4", "anthropic/claude-sonnet-4-5"],
+  concurrency: 2
+});
+
+const dashboard = await sandeval.modelScoreDashboard("openai/gpt-5.4");
+console.log(dashboard.htmlPath);
+```
+
+Useful SDK exports include `runTask`, `runArena`, `scoreRun`, `createStorage`, `buildModelScoreIndex`, `generateModelScoreDashboard`, config helpers, report helpers, and all public TypeScript types.
 
 ## Configuration
 
@@ -71,7 +107,7 @@ Set API keys through environment variables, then edit `.sandeval/config.json`.
 
 `.sandeval/config.json` is intentionally git-ignored because it may contain local command paths or secrets.
 
-The config wizard appends new provider/model entries instead of replacing existing models. It accepts multiple model IDs for one provider, separated by comma or whitespace. You can also skip model IDs and save only the provider credentials/base URL, then run with an explicit reference such as `openai/gpt-5.4`. Less common setup such as sandbox, storage, scoring, workflow, and theme settings lives under the optional `UX Improvement` step.
+The config wizard appends new provider/model entries instead of replacing existing models. It accepts multiple model IDs for one provider, separated by comma or whitespace. You can also skip model IDs and save only the provider credentials/base URL, then run with an explicit reference such as `openai/gpt-5.4`. Less common setup such as sandbox, storage, scoring, workflow, and theme settings lives under the optional experience setup step.
 
 Simple scalar config values can be read or changed without opening the full JSON:
 
@@ -154,25 +190,6 @@ Command models can also set `workflowAdapter` to parse external agent CLI output
 ```
 
 Supported adapters are `codex`, `claude-code`, `jsonl`, and `none`. The Codex and Claude Code adapters recognize common JSON/JSONL event streams, including assistant messages, tool calls, shell commands, file changes, results, and errors. Parsed events are shown in the TUI Workflow view and saved in JSON/Markdown reports together with the raw stdout/stderr artifact.
-
-## Commands
-
-```bash
-sandeval init
-sandeval config wizard
-sandeval config show
-sandeval config get sandbox.mode
-sandeval config set tools.gitRemote true
-sandeval arena --prompt "Build a tiny Vite app" --models openai/gpt-5.4,ollama/qwen2.5-coder:latest --concurrency 2
-sandeval config set-default openai/gpt-5.4
-sandeval login codex-cli
-sandeval auth
-sandeval run task.md --model openai/gpt-5.4 --judge openai/gpt-5.4
-sandeval run --prompt "Build a CLI calculator" --review "Works, but lacks tests"
-sandeval arena task.md --models openai/gpt-5.4,anthropic/claude-sonnet-4-5,gemini/gemini-2.5-pro
-sandeval history
-sandeval tui
-```
 
 ## Codex / Claude Code Login
 

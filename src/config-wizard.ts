@@ -11,7 +11,7 @@ export async function runConfigWizard(cwd: string, configPath?: string): Promise
   config.version = 1;
 
   const selectedProviders = await checkbox({
-    message: "Providers/models to add",
+    message: `Providers/models to add (${config.models.length} configured now; press Enter to skip)`,
     choices: [
       { name: "Mock", value: "mock", checked: config.models.length === 0 },
       { name: "OpenAI compatible", value: "openai-compatible" },
@@ -38,7 +38,7 @@ export async function runConfigWizard(cwd: string, configPath?: string): Promise
   }
 
   await promptDefaultModels(config, selectedProviders.length > 0);
-  await promptUxImprovement(config);
+  await promptExperienceSetup(config);
 
   return saveConfig(config, cwd, configPath);
 }
@@ -71,17 +71,24 @@ async function promptDefaultModels(config: SandEvalConfig, addedModels: boolean)
   });
 }
 
-async function promptUxImprovement(config: SandEvalConfig): Promise<void> {
+async function promptExperienceSetup(config: SandEvalConfig): Promise<void> {
+  const configure = await confirm({
+    message: "Configure run experience, sandbox, storage, scoring, or TUI defaults?",
+    default: false
+  });
+  if (!configure) {
+    return;
+  }
   const sections = await checkbox({
-    message: "UX Improvement details to configure",
+    message: "Experience areas to configure",
     choices: [
-      { name: "Run/report directories", value: "paths" },
-      { name: "Sandbox backend", value: "sandbox" },
-      { name: "Storage backend", value: "storage" },
-      { name: "Agent planning", value: "agent" },
-      { name: "Judge scoring", value: "scoring" },
+      { name: "Run/report directories", value: "paths", checked: true },
+      { name: "Sandbox backend and network policy", value: "sandbox" },
+      { name: "Storage/history backend", value: "storage" },
+      { name: "Agent planning defaults", value: "agent" },
+      { name: "Judge scoring rubric", value: "scoring" },
       { name: "Arena/workflow display", value: "workflow" },
-      { name: "TUI theme", value: "theme" }
+      { name: "TUI theme and paging", value: "theme" }
     ]
   });
 
@@ -250,6 +257,9 @@ async function promptTheme(config: SandEvalConfig): Promise<void> {
     ],
     default: config.ui.theme ?? "sand"
   });
+  config.ui.pageSize = Number(
+    await input({ message: "History page size", default: String(config.ui.pageSize ?? 12), validate: positiveInteger })
+  );
 }
 
 async function promptHttpModel(kind: HttpModelConfig["kind"]): Promise<HttpModelConfig> {

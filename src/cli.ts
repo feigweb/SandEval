@@ -4,6 +4,7 @@ import path from "node:path";
 import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
+import { generateModelScoreDashboard } from "./analytics.js";
 import { runArena } from "./arena.js";
 import { checkModelAuth, loginModel } from "./auth.js";
 import { runConfigWizard } from "./config-wizard.js";
@@ -326,6 +327,37 @@ program
           `${item.startedAt} ${item.type.padEnd(5)} ${String(item.score ?? "-").padStart(3)} ${item.modelNames.join(",")} ${item.taskPreview}`
         );
       }
+    });
+  });
+
+program
+  .command("score-index")
+  .argument("<model>", "Model name, e.g. openai/gpt-5.4")
+  .description("Generate a model score index and Chart HTML dashboard from scored history")
+  .option("-n, --limit <n>", "Stored history entries to scan", parseInteger, 1000)
+  .option("-o, --output-dir <path>", "Dashboard output directory", ".sandeval/dashboards")
+  .option("--json", "Print JSON index to stdout")
+  .action(async (modelName: string, options: { limit: number; outputDir: string; json?: boolean }) => {
+    await main(async () => {
+      const globalOptions = program.opts<{ config?: string }>();
+      const config = await loadConfig(process.cwd(), globalOptions.config);
+      const dashboard = await generateModelScoreDashboard({
+        config,
+        cwd: process.cwd(),
+        modelName,
+        limit: options.limit,
+        outputDir: options.outputDir
+      });
+      if (options.json) {
+        console.log(JSON.stringify({ ...dashboard.index, htmlPath: dashboard.htmlPath }, null, 2));
+        return;
+      }
+      console.log(chalk.bold(`Score index: ${dashboard.index.modelName}`));
+      console.log(`Reviews: ${dashboard.index.reviewCount}`);
+      console.log(`Average: ${dashboard.index.averageScore}/100`);
+      console.log(`Latest: ${dashboard.index.latestScore}/100`);
+      console.log(`Best: ${dashboard.index.bestScore}/100`);
+      console.log(chalk.green(`Dashboard: ${dashboard.htmlPath}`));
     });
   });
 
