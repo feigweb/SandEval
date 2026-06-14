@@ -8,6 +8,7 @@ import { packageArenaArtifacts, packageRunArtifacts } from "./artifacts.js";
 import { loginModel } from "./auth.js";
 import { findModel, getConfigPath, listModelNames, loadConfig, saveConfig } from "./config.js";
 import { extractContextMentions, listContextNames } from "./contexts.js";
+import { ensureSandboxEnvironment } from "./environment.js";
 import { createProvider } from "./providers/index.js";
 import { saveArenaReport, saveRunReport } from "./report.js";
 import { runTask } from "./runner.js";
@@ -48,6 +49,7 @@ export async function runTui(cwd: string, configPath?: string): Promise<void> {
     throw new Error("SandEval TUI requires an interactive terminal. Run `sandeval tui` without piping stdin.");
   }
   const config = await loadConfig(cwd, configPath);
+  await ensureSandboxEnvironment({ sandbox: config.sandbox, prompt: true, context: "tui" });
   const app = render(<SandEvalTui cwd={cwd} configPath={configPath} initialConfig={config} />);
   await app.waitUntilExit();
 }

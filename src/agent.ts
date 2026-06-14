@@ -14,12 +14,14 @@ import type {
   ToolCall,
   Usage,
   WorkflowEvent,
-  WorkflowRawArtifact
+  WorkflowRawArtifact,
+  ContextTrimmerConfig
 } from "./types.js";
 import { AGENT_SYSTEM_PROMPT, AGENT_TOOLS } from "./tools.js";
 import { Sandbox } from "./sandbox.js";
 import { listArtifactFiles, createRunId, stringifyError, sumUsage, truncate } from "./utils.js";
 import { parseWorkflowResponse, workflowEventsToRunEvents } from "./workflow.js";
+import { trimContext } from "./context-trimmer.js";
 
 export interface RunAgentOptions {
   task: string;
@@ -33,6 +35,7 @@ export interface RunAgentOptions {
   activeSkills?: AppliedSkill[];
   plan?: RunPlan;
   onEvent?: RunEventHandler;
+  contextTrimmer?: ContextTrimmerConfig;
 }
 
 export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult> {
@@ -65,8 +68,13 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       turn: turns,
       message: `Turn ${turns}: sending task context to model`
     });
-    const response = await options.provider.chat({
+    const trimmedMessages = trimContext({
       messages,
+      config: options.contextTrimmer
+    });
+
+    const response = await options.provider.chat({
+      messages: trimmedMessages,
       tools: AGENT_TOOLS,
       temperature: options.modelConfig.temperature,
       maxTokens: options.modelConfig.maxTokens,

@@ -3,6 +3,7 @@ import { checkbox, confirm, input, select } from "@inquirer/prompts";
 import password from "@inquirer/password";
 import type { CommandModelConfig, HttpModelConfig, ModelConfig, SandEvalConfig } from "./types.js";
 import { createDefaultConfig, getConfigPath, listModelNames, loadConfig, saveConfig } from "./config.js";
+import { ensureSandboxEnvironment } from "./environment.js";
 
 export async function runConfigWizard(cwd: string, configPath?: string): Promise<string> {
   const resolvedConfigPath = getConfigPath(cwd, configPath);
@@ -40,7 +41,9 @@ export async function runConfigWizard(cwd: string, configPath?: string): Promise
   await promptDefaultModels(config, selectedProviders.length > 0);
   await promptExperienceSetup(config);
 
-  return saveConfig(config, cwd, configPath);
+  const savedPath = await saveConfig(config, cwd, configPath);
+  await ensureSandboxEnvironment({ sandbox: config.sandbox, prompt: true, context: "wizard" });
+  return savedPath;
 }
 
 async function promptDefaultModels(config: SandEvalConfig, addedModels: boolean): Promise<void> {

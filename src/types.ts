@@ -182,6 +182,17 @@ export interface AppliedSkill {
   source: "builtin" | "local" | "global";
 }
 
+export interface ContextTrimmerConfig {
+  maxTokens?: number;
+  maxMessages?: number;
+  preserveSystemPrompt?: boolean;
+  preserveTask?: boolean;
+  truncateCodeBlocks?: boolean;
+  truncateAssistantReplies?: boolean;
+  maxCodeBlockLength?: number;
+  maxAssistantReplyLength?: number;
+}
+
 export interface AgentConfig {
   maxTurns?: number;
   systemPrompt?: string;
@@ -189,6 +200,7 @@ export interface AgentConfig {
   autoRunVerification?: boolean;
   planMode?: "off" | "prompt" | "enforced";
   planApproval?: "auto" | "interactive";
+  contextTrimmer?: ContextTrimmerConfig;
 }
 
 export interface ScoringDimensionConfig {

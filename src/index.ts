@@ -22,6 +22,13 @@ export {
   validateConfig,
   writeDefaultConfig
 } from "./config.js";
+export {
+  checkSandboxEnvironment,
+  ensureSandboxEnvironment,
+  sandboxDependency,
+  type EnvironmentCheckResult,
+  type EnvironmentDependency
+} from "./environment.js";
 export { renderArenaTable, renderRunTable, saveArenaReport, saveRunReport } from "./report.js";
 export { runTask, resolveTask, type RunTaskOptions } from "./runner.js";
 export { scoreRun } from "./scorer.js";

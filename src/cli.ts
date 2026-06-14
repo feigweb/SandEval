@@ -9,12 +9,14 @@ import { runArena } from "./arena.js";
 import { checkModelAuth, loginModel } from "./auth.js";
 import { runConfigWizard } from "./config-wizard.js";
 import { findModel, getConfigPath, listModelNames, loadConfig, saveConfig, validateConfig, writeDefaultConfig } from "./config.js";
+import { ensureSandboxEnvironment } from "./environment.js";
 import { renderArenaTable, renderRunTable, saveArenaReport, saveRunReport } from "./report.js";
 import { runTask } from "./runner.js";
 import { scaffoldCustomProvider } from "./scaffold.js";
 import { createStorage } from "./storage.js";
 import { runTui } from "./tui.js";
 import { stringifyError } from "./utils.js";
+import { runWeb } from "./web.js";
 
 const program = new Command();
 
@@ -50,6 +52,7 @@ program
     await main(async () => {
       const globalOptions = program.opts<{ config?: string }>();
       const config = await loadConfig(process.cwd(), globalOptions.config);
+      await ensureSandboxEnvironment({ sandbox: config.sandbox, prompt: !options.json, context: "run" });
       const userReview = await resolveReview(options.review, options.reviewFile);
       assertMockAllowed(config, {
         json: Boolean(options.json),
@@ -98,6 +101,7 @@ program
     await main(async () => {
       const globalOptions = program.opts<{ config?: string }>();
       const config = await loadConfig(process.cwd(), globalOptions.config);
+      await ensureSandboxEnvironment({ sandbox: config.sandbox, prompt: !options.json, context: "run" });
       const userReview = await resolveReview(options.review, options.reviewFile);
       const models = options.models
         .split(",")
@@ -368,6 +372,23 @@ program
     await main(async () => {
       const globalOptions = program.opts<{ config?: string }>();
       await runTui(process.cwd(), globalOptions.config);
+    });
+  });
+
+program
+  .command("web")
+  .description("Start local Bootstrap web UI")
+  .option("-p, --port <n>", "Port to listen on", parseInteger, 8787)
+  .option("--host <host>", "Host to bind", "127.0.0.1")
+  .action(async (options: { port: number; host: string }) => {
+    await main(async () => {
+      const globalOptions = program.opts<{ config?: string }>();
+      await runWeb({
+        cwd: process.cwd(),
+        configPath: globalOptions.config,
+        host: options.host,
+        port: options.port
+      });
     });
   });
 

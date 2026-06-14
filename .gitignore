@@ -1,9 +1,10 @@
 node_modules/
 dist/
 .env
-.sandeval/config.json
-.sandeval/runs/
-.sandeval/reports/
-.sandeval/storage/
-.sandeval/dashboards/
-.DS_Store
+.sandeval/
+*.tar.gz
+*-artifacts/
+.learnings/
+index.html
+product-landing.html
+sandeval-provider.js

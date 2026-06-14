@@ -93,7 +93,8 @@ export async function runTask(options: RunTaskOptions): Promise<RunReport> {
     activeRules: appliedRules(options.config),
     activeSkills: appliedSkills(skills),
     plan,
-    onEvent: options.onEvent
+    onEvent: options.onEvent,
+    contextTrimmer: options.config.agent?.contextTrimmer
   });
 
   const report: RunReport = {
