@@ -157,7 +157,6 @@ export interface ToolsConfig {
   packageManager?: boolean;
   maxCommandTimeoutMs?: number;
   blockedCommands?: string[];
-  allowedHosts?: string[];
 }
 
 export interface RuleConfig {

@@ -88,14 +88,17 @@ async function runCommandProcess(options: {
     const child = spawn(options.command, options.args, {
       cwd: options.cwd,
       env: options.env,
+      detached: process.platform !== "win32",
       shell: false
     });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let killTimer: NodeJS.Timeout | undefined;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
+      terminateProcess(child, "SIGTERM");
+      killTimer = setTimeout(() => terminateProcess(child, "SIGKILL"), 5000);
     }, options.timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
@@ -109,6 +112,9 @@ async function runCommandProcess(options: {
     });
     child.on("close", (exitCode) => {
       clearTimeout(timer);
+      if (killTimer) {
+        clearTimeout(killTimer);
+      }
       resolve({
         exitCode,
         stdout: truncate(stdout, 20000),
@@ -120,4 +126,23 @@ async function runCommandProcess(options: {
     child.stdin.write(options.stdin);
     child.stdin.end();
   });
+}
+
+function terminateProcess(child: ReturnType<typeof spawn>, signal: NodeJS.Signals): void {
+  if (!child.pid) {
+    return;
+  }
+  try {
+    if (process.platform === "win32") {
+      child.kill(signal);
+      return;
+    }
+    process.kill(-child.pid, signal);
+  } catch {
+    try {
+      child.kill(signal);
+    } catch {
+      // The process may already have exited between timeout and signal delivery.
+    }
+  }
 }

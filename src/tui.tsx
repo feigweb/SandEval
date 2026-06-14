@@ -54,7 +54,7 @@ export async function runTui(cwd: string, configPath?: string): Promise<void> {
 function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: SandEvalConfig }) {
   const { exit } = useApp();
   const [config, setConfig] = useState(props.initialConfig);
-  const models = useMemo(() => listModelNames(config), [config]);
+  const models = useMemo(() => listModelNames(config).filter((model) => findModel(config, model).kind !== "mock"), [config]);
   const contexts = useMemo(() => listContextNames(config), [config]);
   const [skillNames, setSkillNames] = useState<string[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -62,7 +62,7 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
   const [state, setState] = useState<AppState>({
     screen: "run",
     runMode: "single",
-    selectedModel: models.includes(config.defaultModel ?? "") ? config.defaultModel ?? models[0] ?? "mock/mock-agent" : models[0] ?? "mock/mock-agent",
+    selectedModel: models.includes(config.defaultModel ?? "") ? config.defaultModel ?? models[0] ?? "" : models[0] ?? "",
     selectedModels: config.defaultModel && models.includes(config.defaultModel) ? [config.defaultModel] : models.slice(0, 1),
     selectedContexts: [],
     prompt: "",
@@ -107,6 +107,10 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
     if (state.busy) {
       return;
     }
+    if (input === "q") {
+      exit();
+      return;
+    }
     if ((key as { ctrl?: boolean }).ctrl && input.toLowerCase() === "k") {
       setPaletteView("commands");
       setPaletteOpen(true);
@@ -114,9 +118,6 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
     }
     if (paletteOpen || state.screen === "run" || state.screen === "result") {
       return;
-    }
-    if (input === "q") {
-      exit();
     }
     if (key.escape || input === "b") {
       back();
@@ -196,8 +197,13 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
     resolve?.(next);
   }
 
-  async function runSingle() {
-    if (!state.prompt.trim()) {
+  async function runSingle(promptOverride?: string) {
+    const prompt = promptOverride ?? state.prompt;
+    if (!state.selectedModel) {
+      setState((current) => ({ ...current, status: "No non-mock model is configured for TUI runs" }));
+      return;
+    }
+    if (!prompt.trim()) {
       setState((current) => ({ ...current, status: "Enter a task prompt first" }));
       return;
     }
@@ -211,7 +217,7 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
       const report = await runTask({
         config,
         cwd: props.cwd,
-        prompt: state.prompt,
+        prompt,
         modelName: state.selectedModel,
         score: state.score,
         onEvent: appendRunEvent,
@@ -234,8 +240,9 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
     }
   }
 
-  async function runArenaFlow() {
-    if (!state.prompt.trim()) {
+  async function runArenaFlow(promptOverride?: string) {
+    const prompt = promptOverride ?? state.prompt;
+    if (!prompt.trim()) {
       setState((current) => ({ ...current, status: "Enter a task prompt first" }));
       return;
     }
@@ -253,9 +260,10 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
       const report = await runArena({
         config,
         cwd: props.cwd,
-        prompt: state.prompt,
+        prompt,
         models: state.selectedModels,
         score: state.score,
+        concurrency: requiresInteractivePlanApproval(config) ? 1 : undefined,
         onEvent: appendRunEvent,
         contextNames: state.selectedContexts,
         onPlanApproval: approvePlanInTui
@@ -381,11 +389,11 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
     }
   }
 
-  const runCurrent = () => {
+  const runCurrent = (promptOverride?: string) => {
     if (state.runMode === "arena") {
-      void runArenaFlow();
+      void runArenaFlow(promptOverride);
     } else {
-      void runSingle();
+      void runSingle(promptOverride);
     }
   };
 
@@ -479,7 +487,7 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
           body
         )}
       </Box>
-      <Footer colors={colors} status={`${statusSummary(state, config)} · ${state.status}`} />
+      <Footer colors={colors} help={footerHelp(state, paletteOpen)} status={`${statusSummary(state, config)} · ${state.status}`} />
     </Box>
   );
 }
@@ -497,10 +505,10 @@ function Header(props: { colors: Colors; cwd: string; configPath: string }) {
   );
 }
 
-function Footer(props: { colors: Colors; status: string }) {
+function Footer(props: { colors: Colors; help: string; status: string }) {
   return (
     <Box marginTop={1} justifyContent="space-between">
-      <Text color={props.colors.muted}>Ctrl+K commands · Enter run · Esc back · q quit</Text>
+      <Text color={props.colors.muted}>{props.help}</Text>
       <Text color={props.colors.accent}>{props.status}</Text>
     </Box>
   );
@@ -516,7 +524,7 @@ function CommandPalette(props: {
   contexts: string[];
   skillNames: string[];
   onClose: () => void;
-  onRun: () => void;
+  onRun: (promptOverride?: string) => void;
   onGo: (screen: Screen) => void;
   onSetState: React.Dispatch<React.SetStateAction<AppState>>;
   onSaveConfig: (config: SandEvalConfig) => Promise<void>;
@@ -744,7 +752,7 @@ function RunScreen(props: {
   cwd: string;
   state: AppState;
   setState: React.Dispatch<React.SetStateAction<AppState>>;
-  onRun: () => void;
+  onRun: (promptOverride?: string) => void;
   onBack: () => void;
 }) {
   return (
@@ -776,7 +784,7 @@ function ArenaScreen(props: {
   cwd: string;
   state: AppState;
   setState: React.Dispatch<React.SetStateAction<AppState>>;
-  onRun: () => void;
+  onRun: (promptOverride?: string) => void;
   onBack: () => void;
 }) {
   return (
@@ -816,7 +824,7 @@ function ChatWorkspace(props: {
   onModelChange: (model: string) => void;
   onModelsChange: (models: string[]) => void;
   onContextsChange: (contexts: string[]) => void;
-  onRun: () => void;
+  onRun: (promptOverride?: string) => void;
   onBack: () => void;
 }) {
   return (
@@ -846,7 +854,7 @@ function ChatComposer(props: {
   onModelChange: (model: string) => void;
   onModelsChange: (models: string[]) => void;
   onContextsChange: (contexts: string[]) => void;
-  onRun: () => void;
+  onRun: (promptOverride?: string) => void;
   onBack: () => void;
 }) {
   const [overlay, setOverlay] = useState<"none" | "model">("none");
@@ -926,10 +934,6 @@ function ChatComposer(props: {
       props.onBack();
       return;
     }
-    if (key.return) {
-      props.onRun();
-      return;
-    }
     if ((key as { ctrl?: boolean }).ctrl && input.toLowerCase() === "o") {
       setOverlay("model");
       return;
@@ -939,7 +943,18 @@ function ChatComposer(props: {
     }
   });
 
+  const submitPrompt = (value: string) => {
+    const cleaned = value.replace(/[\r\n]+/g, "").trimEnd();
+    props.onPromptChange(cleaned);
+    props.onContextsChange(getMentionedContexts(cleaned, props.contexts));
+    props.onRun(cleaned);
+  };
+
   const updatePrompt = (value: string) => {
+    if (/[\r\n]/.test(value)) {
+      submitPrompt(value);
+      return;
+    }
     if (value !== props.prompt) {
       setDismissedMentionStart(undefined);
     }
@@ -956,6 +971,7 @@ function ChatComposer(props: {
             <TextInput
               value={props.prompt}
               onChange={updatePrompt}
+              onSubmit={submitPrompt}
               placeholder="Describe a task, type @ to attach workspace context"
               focus={overlay === "none"}
             />
@@ -1640,6 +1656,26 @@ function formatCwd(cwd: string): string {
     return cwd.replace(home, "~");
   }
   return cwd;
+}
+
+function footerHelp(state: AppState, paletteOpen: boolean): string {
+  if (paletteOpen) {
+    return "Enter select · Esc close · q quit";
+  }
+  if (state.busy) {
+    return "Running · q quit";
+  }
+  if (state.screen === "result") {
+    return "Arrows choose action · Enter select · q quit";
+  }
+  if (state.screen === "run") {
+    return "Ctrl+K commands · Enter run · Esc back · q quit";
+  }
+  return "Ctrl+K commands · Esc back · q quit";
+}
+
+function requiresInteractivePlanApproval(config: SandEvalConfig): boolean {
+  return config.agent?.planMode === "enforced" && config.agent?.planApproval === "interactive";
 }
 
 function resolveReportDir(config: SandEvalConfig, cwd: string): string {

@@ -7,7 +7,7 @@ import ora from "ora";
 import { runArena } from "./arena.js";
 import { checkModelAuth, loginModel } from "./auth.js";
 import { runConfigWizard } from "./config-wizard.js";
-import { findModel, getConfigPath, listModelNames, loadConfig, saveConfig, writeDefaultConfig } from "./config.js";
+import { findModel, getConfigPath, listModelNames, loadConfig, saveConfig, validateConfig, writeDefaultConfig } from "./config.js";
 import { renderArenaTable, renderRunTable, saveArenaReport, saveRunReport } from "./report.js";
 import { runTask } from "./runner.js";
 import { scaffoldCustomProvider } from "./scaffold.js";
@@ -50,6 +50,11 @@ program
       const globalOptions = program.opts<{ config?: string }>();
       const config = await loadConfig(process.cwd(), globalOptions.config);
       const userReview = await resolveReview(options.review, options.reviewFile);
+      assertMockAllowed(config, {
+        json: Boolean(options.json),
+        modelNames: [options.model ?? config.defaultModel],
+        judgeName: options.score === false ? undefined : options.judge ?? config.judgeModel
+      });
       const spinner = ora("Running SandEval agent").start();
       const report = await runTask({
         config,
@@ -97,6 +102,11 @@ program
         .split(",")
         .map((model) => model.trim())
         .filter(Boolean);
+      assertMockAllowed(config, {
+        json: Boolean(options.json),
+        modelNames: models,
+        judgeName: options.score === false ? undefined : options.judge ?? config.judgeModel
+      });
       const spinner = ora(`Running arena for ${models.length} models`).start();
       const report = await runArena({
         config,
@@ -163,6 +173,42 @@ configCommand
       console.log(`Skills: local ${config.skills?.localDir ?? ".sandeval/skills"}, global ${config.skills?.globalDir ?? "~/.sandeval/skills"}`);
       console.log(`Storage: ${config.storage?.kind ?? "filesystem"} (${config.storage?.root ?? ".sandeval/storage"})`);
       console.log(`Models: ${listModelNames(config).join(", ")}`);
+    });
+  });
+
+configCommand
+  .command("get")
+  .argument("<path>", "Simple dot path, e.g. sandbox.mode")
+  .description("Read a simple config value")
+  .option("--json", "Print JSON")
+  .action(async (configPathExpression: string, options: { json?: boolean }) => {
+    await main(async () => {
+      const globalOptions = program.opts<{ config?: string }>();
+      const config = await loadConfig(process.cwd(), globalOptions.config);
+      const value = getSimpleConfigValue(config, configPathExpression);
+      if (options.json) {
+        console.log(JSON.stringify(value, null, 2));
+      } else {
+        console.log(formatConfigValue(value));
+      }
+    });
+  });
+
+configCommand
+  .command("set")
+  .argument("<path>", "Simple dot path, e.g. sandbox.mode")
+  .argument("<value>", "String, number, boolean, null, or JSON scalar")
+  .description("Set a simple config value")
+  .action(async (configPathExpression: string, rawValue: string) => {
+    await main(async () => {
+      const globalOptions = program.opts<{ config?: string }>();
+      const config = await loadConfig(process.cwd(), globalOptions.config);
+      const parsedValue = parseConfigScalar(rawValue);
+      const next = setSimpleConfigValue(config, configPathExpression, parsedValue);
+      const validated = validateConfig(next);
+      const displayed = parsedValue === null ? undefined : getSimpleConfigValue(validated, configPathExpression);
+      await saveConfig(validated, process.cwd(), globalOptions.config);
+      console.log(chalk.green(`${configPathExpression} = ${parsedValue === null ? "unset" : formatConfigValue(displayed)}`));
     });
   });
 
@@ -317,6 +363,131 @@ function parseInteger(value: string): number {
     throw new Error(`Expected positive integer, got ${value}`);
   }
   return parsed;
+}
+
+function assertMockAllowed(
+  config: Awaited<ReturnType<typeof loadConfig>>,
+  options: { json: boolean; modelNames: Array<string | undefined>; judgeName?: string }
+): void {
+  if (options.json) {
+    return;
+  }
+  const names = [...options.modelNames, options.judgeName].filter((name): name is string => Boolean(name));
+  const mockNames = names.filter((name) => findModel(config, name).kind === "mock");
+  if (mockNames.length) {
+    throw new Error(`Mock models are only available for JSON runs. Re-run with --json or choose a real provider: ${mockNames.join(", ")}`);
+  }
+}
+
+const complexConfigRoots = new Set(["models", "rules", "contexts"]);
+const complexConfigSegments = new Set(["dimensions"]);
+const simpleConfigRoots = new Set([
+  "version",
+  "defaultModel",
+  "judgeModel",
+  "reportDir",
+  "sandbox",
+  "tools",
+  "skills",
+  "agent",
+  "scoring",
+  "arena",
+  "workflow",
+  "storage",
+  "ui"
+]);
+
+function getSimpleConfigValue(config: unknown, expression: string): unknown {
+  const segments = parseConfigPath(expression);
+  let current: unknown = config;
+  for (const segment of segments) {
+    rejectComplexConfigPath(segment, current);
+    if (!isRecord(current) || !(segment in current)) {
+      throw new Error(`Config path not found: ${expression}`);
+    }
+    current = current[segment];
+  }
+  if (Array.isArray(current)) {
+    throw new Error(`Config path "${expression}" points to a complex list. Use config wizard or edit JSON directly.`);
+  }
+  return current;
+}
+
+function setSimpleConfigValue(config: unknown, expression: string, value: unknown): unknown {
+  if (Array.isArray(value) || isRecord(value)) {
+    throw new Error("config set only supports scalar values. Use config wizard or edit JSON for objects/lists.");
+  }
+  const segments = parseConfigPath(expression);
+  const copy = structuredClone(config) as Record<string, unknown>;
+  let current: unknown = copy;
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const segment = segments[index];
+    rejectComplexConfigPath(segment, current);
+    if (!isRecord(current)) {
+      throw new Error(`Config path is not an object at "${segments.slice(0, index).join(".")}".`);
+    }
+    if (current[segment] === undefined) {
+      current[segment] = {};
+    }
+    current = current[segment];
+  }
+  const last = segments.at(-1);
+  if (!last || !isRecord(current)) {
+    throw new Error(`Invalid config path: ${expression}`);
+  }
+  rejectComplexConfigPath(last, current);
+  if (value === null) {
+    delete current[last];
+  } else {
+    current[last] = value;
+  }
+  return copy;
+}
+
+function parseConfigPath(expression: string): string[] {
+  const segments = expression.split(".").map((segment) => segment.trim()).filter(Boolean);
+  if (segments.length === 0 || segments.some((segment) => !/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(segment))) {
+    throw new Error(`Invalid config path: ${expression}`);
+  }
+  if (complexConfigRoots.has(segments[0])) {
+    throw new Error(`Config path "${expression}" is a complex list. Use config wizard or edit JSON directly.`);
+  }
+  if (!simpleConfigRoots.has(segments[0])) {
+    throw new Error(`Unknown simple config section "${segments[0]}".`);
+  }
+  if (segments.some((segment) => complexConfigSegments.has(segment))) {
+    throw new Error(`Config path "${expression}" is a complex list. Use config wizard or edit JSON directly.`);
+  }
+  return segments;
+}
+
+function rejectComplexConfigPath(segment: string, current: unknown): void {
+  if (Array.isArray(current)) {
+    throw new Error(`Config segment "${segment}" is inside a complex list. Use config wizard or edit JSON directly.`);
+  }
+}
+
+function parseConfigScalar(raw: string): string | number | boolean | null {
+  const trimmed = raw.trim();
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  if (trimmed === "null") return null;
+  if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+  return raw;
+}
+
+function formatConfigValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  return JSON.stringify(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 interface RunCommandOptions {

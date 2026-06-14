@@ -98,8 +98,7 @@ const configSchema = z.object({
       gitRemote: z.boolean().optional(),
       packageManager: z.boolean().optional(),
       maxCommandTimeoutMs: z.number().positive().optional(),
-      blockedCommands: z.array(z.string()).optional(),
-      allowedHosts: z.array(z.string()).optional()
+      blockedCommands: z.array(z.string()).optional()
     })
     .optional(),
   rules: z
@@ -209,7 +208,11 @@ export async function loadConfig(cwd = process.cwd(), explicitPath?: string): Pr
 
   const raw = await readFile(configPath, "utf8");
   const parsed = JSON.parse(raw) as unknown;
-  return withDefaults(configSchema.parse(parsed) as SandEvalConfig);
+  return validateConfig(parsed);
+}
+
+export function validateConfig(config: unknown): SandEvalConfig {
+  return withDefaults(configSchema.parse(config) as SandEvalConfig);
 }
 
 export async function saveConfig(config: SandEvalConfig, cwd = process.cwd(), explicitPath?: string): Promise<string> {
@@ -235,8 +238,8 @@ export async function writeDefaultConfig(cwd = process.cwd()): Promise<string> {
 export function createDefaultConfig(): SandEvalConfig {
   return {
     version: 1,
-    defaultModel: "mock",
-    judgeModel: "mock",
+    defaultModel: "openai/gpt-5.4",
+    judgeModel: "openai/gpt-5.4",
     reportDir: ".sandeval/reports",
     sandbox: {
       mode: "local",

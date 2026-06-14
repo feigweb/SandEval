@@ -38,13 +38,14 @@ npm run build
 node dist/cli.js init
 node dist/cli.js config wizard
 node dist/cli.js login codex-cli
-node dist/cli.js run --prompt "Create a tiny Node script that prints a haiku" --model mock/mock-agent
+node dist/cli.js run --prompt "Create a tiny Node script that prints a haiku"
+node dist/cli.js run --prompt "Smoke test the SandEval loop" --model mock/mock-agent --no-score --json
 node dist/cli.js tui
 ```
 
 In the TUI, SandEval opens directly into the run workspace. Use `Ctrl+K` for the command palette: switch Single/Arena mode, choose models, select contexts, toggle Skills and Rules, toggle scoring, change sandbox/tool settings, open history, login providers, package artifacts, or score a result. Type `@workspace` to attach a context and `@skill:verification` or `@skill:{tui-design}` to attach a Skill. Generation runs from the workspace with Enter.
 
-`sandeval init` creates `.sandeval/config.json`. The generated config includes a `mock` model so the full loop can be tested without API keys.
+`sandeval init` creates `.sandeval/config.json`. The generated config defaults to the OpenAI provider, not mock mode. A deterministic `mock/mock-agent` model is still included for CI or smoke tests, but SandEval only allows it for JSON CLI runs and hides it from the TUI because it produces fixed test artifacts rather than following arbitrary prompts.
 
 ## Configuration
 
@@ -71,6 +72,17 @@ Set API keys through environment variables, then edit `.sandeval/config.json`.
 `.sandeval/config.json` is intentionally git-ignored because it may contain local command paths or secrets.
 
 The config wizard appends new provider/model entries instead of replacing existing models. It accepts multiple model IDs for one provider, separated by comma or whitespace. You can also skip model IDs and save only the provider credentials/base URL, then run with an explicit reference such as `openai/gpt-5.4`. Less common setup such as sandbox, storage, scoring, workflow, and theme settings lives under the optional `UX Improvement` step.
+
+Simple scalar config values can be read or changed without opening the full JSON:
+
+```bash
+sandeval config get sandbox.mode
+sandeval config set sandbox.mode docker
+sandeval config set tools.gitRemote true
+sandeval config set scoring.enabled false
+```
+
+`config get/set` intentionally does not edit complex list-backed sections such as `models`, `rules`, `contexts`, or scoring `dimensions`. Use `sandeval config wizard` or edit `.sandeval/config.json` directly for provider and list configuration.
 
 Ollama and LM Studio use the existing OpenAI-compatible provider path:
 
@@ -149,6 +161,8 @@ Supported adapters are `codex`, `claude-code`, `jsonl`, and `none`. The Codex an
 sandeval init
 sandeval config wizard
 sandeval config show
+sandeval config get sandbox.mode
+sandeval config set tools.gitRemote true
 sandeval arena --prompt "Build a tiny Vite app" --models openai/gpt-5.4,ollama/qwen2.5-coder:latest --concurrency 2
 sandeval config set-default openai/gpt-5.4
 sandeval login codex-cli

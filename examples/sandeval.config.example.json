@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "defaultModel": "mock/mock-agent",
-  "judgeModel": "mock/mock-agent",
+  "defaultModel": "openai/gpt-5.4",
+  "judgeModel": "openai/gpt-5.4",
   "sandbox": {
     "mode": "local",
     "root": ".sandeval/runs",
