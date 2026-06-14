@@ -7,12 +7,19 @@ import type {
   ModelProvider,
   RunEvent,
   RunEventHandler,
+  RunPlan,
+  AppliedRule,
+  AppliedSkill,
+  ToolsConfig,
   ToolCall,
-  Usage
+  Usage,
+  WorkflowEvent,
+  WorkflowRawArtifact
 } from "./types.js";
 import { AGENT_SYSTEM_PROMPT, AGENT_TOOLS } from "./tools.js";
 import { Sandbox } from "./sandbox.js";
 import { listArtifactFiles, createRunId, stringifyError, sumUsage, truncate } from "./utils.js";
+import { parseWorkflowResponse, workflowEventsToRunEvents } from "./workflow.js";
 
 export interface RunAgentOptions {
   task: string;
@@ -20,19 +27,27 @@ export interface RunAgentOptions {
   provider: ModelProvider;
   sandbox: Sandbox;
   maxTurns?: number;
+  systemPrompt?: string;
+  toolPermissions?: ToolsConfig;
+  activeRules?: AppliedRule[];
+  activeSkills?: AppliedSkill[];
+  plan?: RunPlan;
   onEvent?: RunEventHandler;
 }
 
 export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult> {
   const started = new Date();
   const messages: ChatMessage[] = [
-    { role: "system", content: AGENT_SYSTEM_PROMPT },
+    { role: "system", content: options.systemPrompt ?? AGENT_SYSTEM_PROMPT },
     { role: "user", content: options.task }
   ];
   const usages: Usage[] = [];
   let finish: FinishPayload | undefined;
   let finalContent: string | undefined;
   let turns = 0;
+  const workflowEvents: WorkflowEvent[] = [];
+  const workflowRaw: WorkflowRawArtifact[] = [];
+  const workflowAdapter = options.modelConfig.kind === "command" ? options.modelConfig.workflowAdapter : undefined;
 
   await options.sandbox.init();
   emit(options.onEvent, {
@@ -73,6 +88,17 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       }
     });
 
+    const workflow = parseWorkflowResponse(options.modelConfig, response, turns);
+    if (workflow.raw) {
+      workflowRaw.push(workflow.raw);
+    }
+    if (workflow.events.length) {
+      workflowEvents.push(...workflow.events);
+      for (const event of workflowEventsToRunEvents(workflow.events, options.modelConfig.name)) {
+        emit(options.onEvent, event);
+      }
+    }
+
     usages.push(response.usage ?? {});
     messages.push({
       role: "assistant",
@@ -94,7 +120,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
         message: describeToolStart(toolCall),
         detail: toolCall.arguments
       });
-      const result = await executeTool(options.sandbox, toolCall.name, toolCall.arguments);
+      const result = await executeTool(options.sandbox, toolCall.name, toolCall.arguments, options.toolPermissions);
       emit(options.onEvent, {
         type: "tool-finish",
         modelName: options.modelConfig.name,
@@ -145,7 +171,14 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     commands: options.sandbox.commandResults,
     files,
     usage: sumUsage(usages),
-    turns
+    turns,
+    activeRules: options.activeRules,
+    activeSkills: options.activeSkills,
+    plan: options.plan,
+    toolPermissions: options.toolPermissions,
+    workflowAdapter,
+    workflowEvents,
+    workflowRaw
   };
 }
 
@@ -219,28 +252,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-async function executeTool(sandbox: Sandbox, name: string, args: Record<string, unknown>): Promise<unknown> {
+async function executeTool(sandbox: Sandbox, name: string, args: Record<string, unknown>, tools: ToolsConfig = {}): Promise<unknown> {
   try {
     switch (name) {
       case "write_file": {
+        ensureFilesEnabled(tools);
         const relativePath = expectString(args.path, "path");
         const content = expectString(args.content, "content");
         return sandbox.writeFile(relativePath, content);
       }
       case "read_file": {
+        ensureFilesEnabled(tools);
         const relativePath = expectString(args.path, "path");
         return { path: relativePath, content: truncate(await sandbox.readFile(relativePath), 12000) };
       }
       case "list_files": {
+        ensureFilesEnabled(tools);
         const relativePath = typeof args.path === "string" ? args.path : ".";
         return { path: relativePath, files: await sandbox.listFiles(relativePath) };
       }
       case "search_files": {
+        ensureFilesEnabled(tools);
         const query = expectString(args.query, "query");
         const relativePath = typeof args.path === "string" ? args.path : ".";
         return { query, path: relativePath, matches: await sandbox.searchFiles(query, relativePath) };
       }
       case "replace_in_file": {
+        ensureFilesEnabled(tools);
         const relativePath = expectString(args.path, "path");
         const search = expectString(args.search, "search");
         const replace = expectString(args.replace, "replace");
@@ -250,7 +288,11 @@ async function executeTool(sandbox: Sandbox, name: string, args: Record<string, 
       case "run_command": {
         const command = expectString(args.command, "command");
         const commandArgs = Array.isArray(args.args) ? args.args.map(String) : [];
-        const timeoutMs = typeof args.timeoutMs === "number" ? args.timeoutMs : undefined;
+        ensureCommandAllowed(command, commandArgs, tools);
+        const requestedTimeout = typeof args.timeoutMs === "number" ? args.timeoutMs : undefined;
+        const timeoutMs = tools.maxCommandTimeoutMs
+          ? Math.min(requestedTimeout ?? tools.maxCommandTimeoutMs, tools.maxCommandTimeoutMs)
+          : requestedTimeout;
         return sandbox.runCommand(command, commandArgs, timeoutMs);
       }
       case "finish": {
@@ -275,4 +317,72 @@ function expectString(value: unknown, name: string): string {
     throw new Error(`Expected ${name} to be a string.`);
   }
   return value;
+}
+
+function ensureFilesEnabled(tools: ToolsConfig): void {
+  if (tools.files === false) {
+    throw new Error("File tools are disabled by config.tools.files.");
+  }
+}
+
+function ensureCommandAllowed(command: string, args: string[], tools: ToolsConfig): void {
+  if (tools.shell === false) {
+    throw new Error("Shell commands are disabled by config.tools.shell.");
+  }
+
+  const executable = baseCommand(command);
+  if ((tools.blockedCommands ?? []).includes(executable)) {
+    throw new Error(`Command "${executable}" is blocked by config.tools.blockedCommands.`);
+  }
+
+  if (executable === "git") {
+    ensureGitAllowed(args, tools);
+    return;
+  }
+
+  if (tools.packageManager === false && isPackageManager(executable)) {
+    throw new Error(`Package manager command "${executable}" is disabled by config.tools.packageManager.`);
+  }
+}
+
+function ensureGitAllowed(args: string[], tools: ToolsConfig): void {
+  const mode = tools.git ?? "full";
+  if (mode === "off") {
+    throw new Error("Git commands are disabled by config.tools.git.");
+  }
+
+  const subcommand = args[0] ?? "";
+  const remoteSubcommands = new Set(["push", "pull", "fetch", "clone", "remote"]);
+  if (remoteSubcommands.has(subcommand) && tools.gitRemote !== true) {
+    throw new Error(`Git remote command "git ${subcommand}" is disabled by config.tools.gitRemote.`);
+  }
+
+  const readOnly = new Set(["status", "diff", "log", "show", "rev-parse"]);
+  if (mode === "read") {
+    if (!readOnly.has(subcommand)) {
+      throw new Error(`Git command "git ${subcommand}" requires config.tools.git to be "full".`);
+    }
+    return;
+  }
+
+  if (subcommand === "reset" && args.includes("--hard")) {
+    throw new Error("Dangerous Git command \"git reset --hard\" is disabled.");
+  }
+  if (subcommand === "clean" && args.some((arg) => arg.includes("f"))) {
+    throw new Error("Dangerous Git clean with force is disabled.");
+  }
+  if (subcommand === "checkout" && !args.includes("-b")) {
+    throw new Error("Git checkout is limited to branch creation with -b.");
+  }
+  if (subcommand === "switch" && !args.includes("-c")) {
+    throw new Error("Git switch is limited to branch creation with -c.");
+  }
+}
+
+function baseCommand(command: string): string {
+  return command.split(/[\\/]/).pop() ?? command;
+}
+
+function isPackageManager(command: string): boolean {
+  return new Set(["npm", "pnpm", "yarn", "bun", "pip", "pip3", "uv", "poetry", "cargo", "go"]).has(command);
 }

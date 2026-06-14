@@ -1,5 +1,5 @@
 import type { ChatMessage, HttpModelConfig, ModelChatRequest, ModelProvider, ModelResponse, ToolCall } from "../types.js";
-import { fetchJson, getApiKey, joinUrl, normalizeToolCall, normalizeUsage } from "./base.js";
+import { fetchJson, getApiKey, joinUrl, normalizeToolCall, normalizeUsage, requireModelId } from "./base.js";
 
 export class GeminiCompatibleProvider implements ModelProvider {
   readonly name: string;
@@ -10,7 +10,7 @@ export class GeminiCompatibleProvider implements ModelProvider {
 
   async chat(request: ModelChatRequest): Promise<ModelResponse> {
     const apiKey = await getApiKey(this.config);
-    const url = `${joinUrl(this.config.baseUrl, `/models/${this.config.model}:generateContent`)}?key=${encodeURIComponent(apiKey)}`;
+    const url = `${joinUrl(this.config.baseUrl, `/models/${requireModelId(this.config)}:generateContent`)}?key=${encodeURIComponent(apiKey)}`;
     const system = request.messages
       .filter((message) => message.role === "system")
       .map((message) => message.content)
@@ -38,7 +38,9 @@ export class GeminiCompatibleProvider implements ModelProvider {
           : undefined,
         generationConfig: {
           temperature: request.temperature ?? this.config.temperature,
-          maxOutputTokens: request.maxTokens ?? this.config.maxTokens
+          maxOutputTokens: request.maxTokens ?? this.config.maxTokens,
+          responseMimeType: request.responseFormat?.type === "json_schema" ? "application/json" : undefined,
+          responseSchema: request.responseFormat?.type === "json_schema" ? request.responseFormat.schema : undefined
         }
       })
     })) as GeminiResponse;

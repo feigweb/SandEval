@@ -86,6 +86,7 @@ program
   .option("--review-file <path>", "Read human review from file")
   .option("--no-score", "Skip judge scoring")
   .option("--max-turns <n>", "Maximum agent turns", parseInteger)
+  .option("--concurrency <n>", "Maximum concurrent model runs", parseInteger)
   .option("--json", "Print JSON report to stdout")
   .action(async (taskFile: string | undefined, options: ArenaCommandOptions) => {
     await main(async () => {
@@ -106,7 +107,8 @@ program
         judgeName: options.judge,
         userReview,
         score: options.score,
-        maxTurns: options.maxTurns
+        maxTurns: options.maxTurns,
+        concurrency: options.concurrency
       });
       spinner.succeed("Arena complete");
       const paths = await saveArenaReport(report, path.resolve(process.cwd(), config.reportDir ?? ".sandeval/reports"));
@@ -151,6 +153,14 @@ configCommand
       console.log(`Default model: ${config.defaultModel ?? "-"}`);
       console.log(`Judge model: ${config.judgeModel ?? "-"}`);
       console.log(`Sandbox: ${config.sandbox?.mode ?? "local"} (${config.sandbox?.root ?? ".sandeval/runs"})`);
+      console.log(`Plan: ${config.agent?.planMode ?? "prompt"} (${config.agent?.planApproval ?? "auto"})`);
+      console.log(`Scoring: ${config.scoring?.mode ?? "multi"}`);
+      console.log(`Arena concurrency: ${config.arena?.concurrency ?? 1}`);
+      console.log(
+        `Tools: files ${config.tools?.files !== false ? "on" : "off"}, shell ${config.tools?.shell !== false ? "on" : "off"}, git ${config.tools?.git ?? "full"}, gitRemote ${config.tools?.gitRemote === true ? "on" : "off"}`
+      );
+      console.log(`Rules: ${(config.rules ?? []).filter((rule) => rule.enabled !== false).map((rule) => rule.name).join(", ") || "none"}`);
+      console.log(`Skills: local ${config.skills?.localDir ?? ".sandeval/skills"}, global ${config.skills?.globalDir ?? "~/.sandeval/skills"}`);
       console.log(`Storage: ${config.storage?.kind ?? "filesystem"} (${config.storage?.root ?? ".sandeval/storage"})`);
       console.log(`Models: ${listModelNames(config).join(", ")}`);
     });
@@ -317,6 +327,7 @@ interface RunCommandOptions {
   reviewFile?: string;
   score: boolean;
   maxTurns?: number;
+  concurrency?: number;
   json?: boolean;
 }
 

@@ -1,5 +1,5 @@
 import type { ChatMessage, HttpModelConfig, ModelChatRequest, ModelProvider, ModelResponse, ToolCall } from "../types.js";
-import { fetchJson, getApiKey, joinUrl, normalizeToolCall, normalizeUsage } from "./base.js";
+import { fetchJson, getApiKey, joinUrl, normalizeToolCall, normalizeUsage, requireModelId } from "./base.js";
 
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly name: string;
@@ -10,7 +10,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   async chat(request: ModelChatRequest): Promise<ModelResponse> {
     const body = {
-      model: this.config.model,
+      model: requireModelId(this.config),
       messages: request.messages.map(toOpenAIMessage),
       tools: request.tools?.map((tool) => ({
         type: "function",
@@ -22,7 +22,19 @@ export class OpenAICompatibleProvider implements ModelProvider {
       })),
       tool_choice: request.tools?.length ? "auto" : undefined,
       temperature: request.temperature ?? this.config.temperature,
-      max_tokens: request.maxTokens ?? this.config.maxTokens
+      max_tokens: request.maxTokens ?? this.config.maxTokens,
+      response_format:
+        request.responseFormat?.type === "json_schema"
+          ? {
+              type: "json_schema",
+              json_schema: {
+                name: request.responseFormat.name,
+                description: request.responseFormat.description,
+                schema: request.responseFormat.schema,
+                strict: request.responseFormat.strict ?? true
+              }
+            }
+          : undefined
     };
 
     const raw = (await fetchJson(joinUrl(this.config.baseUrl, "/chat/completions"), {

@@ -1,4 +1,4 @@
-import type { ArenaReport, RunEventHandler, RunReport, SandEvalConfig } from "./types.js";
+import type { ArenaReport, RunEventHandler, RunPlan, RunReport, SandEvalConfig } from "./types.js";
 import { runTask } from "./runner.js";
 import { createRunId } from "./utils.js";
 
@@ -12,8 +12,10 @@ export interface RunArenaOptions {
   userReview?: string;
   score?: boolean;
   maxTurns?: number;
+  concurrency?: number;
   onEvent?: RunEventHandler;
   contextNames?: string[];
+  onPlanApproval?: (plan: RunPlan) => Promise<RunPlan>;
 }
 
 export async function runArena(options: RunArenaOptions): Promise<ArenaReport> {
@@ -21,7 +23,8 @@ export async function runArena(options: RunArenaOptions): Promise<ArenaReport> {
   const results: RunReport[] = [];
   let task = "";
 
-  for (const modelName of options.models) {
+  const concurrency = Math.max(1, options.concurrency ?? options.config.arena?.concurrency ?? 1);
+  await mapWithConcurrency(options.models, concurrency, async (modelName, modelIndex) => {
     options.onEvent?.({
       type: "arena-model-start",
       at: new Date().toISOString(),
@@ -39,10 +42,11 @@ export async function runArena(options: RunArenaOptions): Promise<ArenaReport> {
       score: options.score,
       maxTurns: options.maxTurns,
       onEvent: options.onEvent,
-      contextNames: options.contextNames
+      contextNames: options.contextNames,
+      onPlanApproval: options.onPlanApproval
     });
     task = report.run.task;
-    results.push(report);
+    results[modelIndex] = report;
     options.onEvent?.({
       type: "arena-model-finish",
       at: new Date().toISOString(),
@@ -51,7 +55,7 @@ export async function runArena(options: RunArenaOptions): Promise<ArenaReport> {
       message: `Arena model finished: ${modelName}`,
       detail: { score: report.score?.score }
     });
-  }
+  });
 
   const finished = new Date();
   return {
@@ -62,4 +66,19 @@ export async function runArena(options: RunArenaOptions): Promise<ArenaReport> {
     durationMs: finished.getTime() - started.getTime(),
     results
   };
+}
+
+async function mapWithConcurrency<T>(items: T[], concurrency: number, fn: (item: T, index: number) => Promise<void>): Promise<void> {
+  let index = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (index < items.length) {
+      const itemIndex = index;
+      const item = items[index];
+      index += 1;
+      if (item !== undefined) {
+        await fn(item, itemIndex);
+      }
+    }
+  });
+  await Promise.all(workers);
 }

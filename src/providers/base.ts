@@ -14,6 +14,13 @@ export async function getApiKey(config: HttpModelConfig): Promise<string> {
   return key;
 }
 
+export function requireModelId(config: { name: string; model?: string }): string {
+  if (!config.model) {
+    throw new Error(`Model id missing for provider "${config.name}". Use a model reference like "${config.name}/model-id".`);
+  }
+  return config.model;
+}
+
 async function getCommandToken(modelName: string, auth: AuthConfig): Promise<string> {
   if (!auth.tokenCommand) {
     throw new Error(`Model "${modelName}" uses command-token auth but auth.tokenCommand is not configured.`);

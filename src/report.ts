@@ -74,6 +74,14 @@ function renderRunMarkdown(report: RunReport): string {
     `- Tokens: ${run.usage.totalTokens ?? "unknown"}`,
     report.score ? `- Score: ${report.score.score}/100` : "- Score: not requested",
     report.reportPaths?.artifactPath ? `- Artifact package: \`${report.reportPaths.artifactPath}\`` : "",
+    run.activeSkills?.length ? `- Skills: ${run.activeSkills.map((skill) => `${skill.name} (${skill.source})`).join(", ")}` : "- Skills: none",
+    run.activeRules?.length ? `- Rules: ${run.activeRules.map((rule) => rule.name).join(", ")}` : "- Rules: none",
+    run.workflowAdapter ? `- Workflow adapter: ${run.workflowAdapter}` : "- Workflow adapter: none",
+    run.workflowEvents?.length ? `- Workflow events: ${run.workflowEvents.length}` : "- Workflow events: none",
+    "",
+    "## Tool Permissions",
+    "",
+    renderToolPermissions(run.toolPermissions),
     "",
     "## Task",
     "",
@@ -83,6 +91,10 @@ function renderRunMarkdown(report: RunReport): string {
     "",
     run.finish?.summary ?? run.finalContent ?? "No final summary.",
     "",
+    "## Plan",
+    "",
+    renderPlan(run.plan),
+    "",
     "## User Review",
     "",
     report.userReview || "No user review provided.",
@@ -90,6 +102,18 @@ function renderRunMarkdown(report: RunReport): string {
     "## Judge",
     "",
     report.score?.summary ?? "No judge score.",
+    "",
+    "## Score Dimensions",
+    "",
+    renderScoreDimensions(report.score),
+    "",
+    "## Workflow Events",
+    "",
+    renderWorkflowEvents(run.workflowEvents),
+    "",
+    "## Workflow Raw Artifacts",
+    "",
+    renderWorkflowRaw(run.workflowRaw),
     "",
     "## Files",
     "",
@@ -132,6 +156,102 @@ function renderArenaMarkdown(report: ArenaReport): string {
     ...report.results.map(
       (result) =>
         `| ${result.run.modelName} | ${result.score?.score ?? "-"} | ${result.run.turns} | ${result.run.usage.totalTokens ?? "-"} | \`${result.run.workspace}\` |`
+    ),
+    "",
+    "## Workflow Events",
+    "",
+    ...report.results.flatMap((result) => [
+      `### ${result.run.modelName}`,
+      "",
+      renderWorkflowEvents(result.run.workflowEvents),
+      ""
+    ])
+  ].join("\n");
+}
+
+function renderPlan(plan: RunReport["run"]["plan"]): string {
+  if (!plan) {
+    return "No enforced plan recorded.";
+  }
+  return [
+    `- Approved: ${plan.approved ? "yes" : "no"}`,
+    `- Approval mode: ${plan.approvalMode}`,
+    `- Revisions: ${plan.revisions.length}`,
+    "",
+    plan.content
+  ].join("\n");
+}
+
+function renderScoreDimensions(score: RunReport["score"]): string {
+  if (!score?.dimensions?.length) {
+    return "No score dimensions recorded.";
+  }
+  return [
+    "| Dimension | Score | Weight | Summary |",
+    "| --- | ---: | ---: | --- |",
+    ...score.dimensions.map(
+      (dimension) =>
+        `| ${dimension.label ?? dimension.key} | ${dimension.score} | ${dimension.weight} | ${(dimension.summary ?? "").replace(/\|/g, "\\|")} |`
     )
   ].join("\n");
+}
+
+function renderToolPermissions(tools: RunReport["run"]["toolPermissions"]): string {
+  if (!tools) {
+    return "No tool permission metadata recorded.";
+  }
+  return [
+    `- Files: ${tools.files !== false ? "on" : "off"}`,
+    `- Shell: ${tools.shell !== false ? "on" : "off"}`,
+    `- Git: ${tools.git ?? "full"}`,
+    `- Git remote: ${tools.gitRemote === true ? "on" : "off"}`,
+    `- Package manager: ${tools.packageManager !== false ? "on" : "off"}`,
+    tools.maxCommandTimeoutMs ? `- Max command timeout: ${tools.maxCommandTimeoutMs} ms` : "",
+    tools.blockedCommands?.length ? `- Blocked commands: ${tools.blockedCommands.join(", ")}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function renderWorkflowEvents(events: RunReport["run"]["workflowEvents"]): string {
+  if (!events?.length) {
+    return "No workflow events recorded.";
+  }
+  return events
+    .map((event) => {
+      const detail = [
+        event.command ? `command=\`${event.command}\`` : "",
+        event.path ? `path=\`${event.path}\`` : "",
+        event.toolName ? `tool=${event.toolName}` : ""
+      ]
+        .filter(Boolean)
+        .join("; ");
+      return `- ${event.kind}: ${event.title}${event.message ? ` - ${event.message.replace(/\s+/g, " ")}` : ""}${detail ? ` (${detail})` : ""}`;
+    })
+    .join("\n");
+}
+
+function renderWorkflowRaw(rawArtifacts: RunReport["run"]["workflowRaw"]): string {
+  if (!rawArtifacts?.length) {
+    return "No raw workflow artifact recorded.";
+  }
+  return rawArtifacts
+    .flatMap((artifact, index) => [
+      `### ${artifact.adapter} turn ${index + 1}`,
+      "",
+      `- Exit: ${artifact.exitCode ?? "unknown"}`,
+      `- Timed out: ${artifact.timedOut === true ? "yes" : "no"}`,
+      artifact.jsonLineCount !== undefined ? `- JSON lines: ${artifact.jsonLineCount}` : "",
+      "",
+      "```stdout",
+      artifact.stdout ?? "",
+      "```",
+      "",
+      "```stderr",
+      artifact.stderr ?? "",
+      "```",
+      ""
+    ])
+    .filter(Boolean)
+    .join("\n");
 }

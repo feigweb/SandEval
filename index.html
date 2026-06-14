@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Three.js 3D 树木模型</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background: #1a2a3a;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+
+        #info {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.7);
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(8px);
+            padding: 8px 22px;
+            border-radius: 20px;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            pointer-events: none;
+            user-select: none;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            z-index: 10;
+        }
+
+        #title {
+            position: fixed;
+            top: 28px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.15);
+            font-size: 20px;
+            font-weight: 300;
+            letter-spacing: 4px;
+            pointer-events: none;
+            user-select: none;
+            text-transform: uppercase;
+            z-index: 10;
+        }
+
+        @media (max-width: 600px) {
+            #info {
+                bottom: 20px;
+                font-size: 12px;
+                padding: 6px 16px;
+            }
+            #title {
+                font-size: 14px;
+                top: 18px;
+                letter-spacing: 2px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="title">✦ 树木模型</div>
+    <div id="info">🖱 拖拽旋转 · 滚轮缩放 · 自动旋转中</div>
+
+    <!-- Three.js Import Map -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        // ============================================================
+        // 导入
+        // ============================================================
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // ============================================================
+        // 场景 / 相机 / 渲染器
+        // ============================================================
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        scene.fog = new THREE.Fog(0x87CEEB, 20, 40);
+
+        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(6, 4, 8);
+        camera.lookAt(0, 2, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        document.body.appendChild(renderer.domElement);
+
+        // ============================================================
+        // 控制器
+        // ============================================================
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 2.2, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 1.6;
+        controls.minDistance = 2.5;
+        controls.maxDistance = 18;
+        controls.maxPolarAngle = Math.PI / 2.1;
+        controls.update();
+
+        // ============================================================
+        // 光照
+        // ============================================================
+        const ambientLight = new THREE.AmbientLight(0x404060, 0.5);
+        scene.add(ambientLight);
+
+        const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x3a7d44, 0.8);
+        scene.add(hemiLight);
+
+        const mainLight = new THREE.DirectionalLight(0xffeedd, 2.2);
+        mainLight.position.set(8, 12, 6);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 2048;
+        mainLight.shadow.mapSize.height = 2048;
+        mainLight.shadow.camera.near = 0.1;
+        mainLight.shadow.camera.far = 30;
+        mainLight.shadow.camera.left = -10;
+        mainLight.shadow.camera.right = 10;
+        mainLight.shadow.camera.top = 10;
+        mainLight.shadow.camera.bottom = -10;
+        mainLight.shadow.bias = -0.001;
+        scene.add(mainLight);
+
+        const fillLight = new THREE.DirectionalLight(0x88ccff, 0.6);
+        fillLight.position.set(-4, 6, -6);
+        scene.add(fillLight);
+
+        const rimLight = new THREE.DirectionalLight(0xffeedd, 0.5);
+        rimLight.position.set(-2, 1, 8);
+        scene.add(rimLight);
+
+        // 可选：显示光位置辅助
+        // const helper = new THREE.DirectionalLightHelper(mainLight, 1);
+        // scene.add(helper);
+
+        // ============================================================
+        // 地面
+        // ============================================================
+        const groundGeometry = new THREE.CircleGeometry(12, 64);
+        const groundMaterial = new THREE.MeshStandardMaterial({
+            color: 0x6da56a,
+            roughness: 0.9,
+            metalness: 0.0,
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.05;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // 地面装饰 — 草地小点
+        const grassBladeCount = 600;
+        const grassGeometry = new THREE.BufferGeometry();
+        const grassPositions = new Float32Array(grassBladeCount * 3);
+        const grassColors = new Float32Array(grassBladeCount * 3);
+        for (let i = 0; i < grassBladeCount; i++) {
+            const radius = 0.5 + Math.random() * 5.5;
+            const angle = Math.random() * Math.PI * 2;
+            const x = Math.cos(angle) * radius;
+            const z = Math.sin(angle) * radius;
+            grassPositions[i * 3] = x;
+            grassPositions[i * 3 + 1] = 0;
+            grassPositions[i * 3 + 2] = z;
+            const shade = 0.3 + Math.random() * 0.4;
+            grassColors[i * 3] = 0.2 + shade * 0.3;
+            grassColors[i * 3 + 1] = 0.5 + shade * 0.4;
+            grassColors[i * 3 + 2] = 0.1 + shade * 0.2;
+        }
+        grassGeometry.setAttribute('position', new THREE.BufferAttribute(grassPositions, 3));
+        grassGeometry.setAttribute('color', new THREE.BufferAttribute(grassColors, 3));
+        const grassMaterial = new THREE.PointsMaterial({
+            size: 0.12,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.8,
+            sizeAttenuation: true,
+        });
+        const grassPoints = new THREE.Points(grassGeometry, grassMaterial);
+        grassPoints.position.y = 0;
+        scene.add(grassPoints);
+
+        // ============================================================
+        // 树木生成
+        // ============================================================
+        function createTree() {
+            const treeGroup = new THREE.Group();
+
+            // ---- 树干 ----
+            const trunkHeight = 2.4 + Math.random() * 0.3;
+            const trunkBottomRadius = 0.45 + Math.random() * 0.1;
+            const trunkTopRadius = 0.25 + Math.random() * 0.08;
+
+            // 树干稍微弯曲的效果 —— 用两个圆柱拼接
+            const trunkSegs = 3;
+            const segHeight = trunkHeight / trunkSegs;
+            const trunkMaterial = new THREE.MeshStandardMaterial({
+                color: new THREE.Color().setHSL(0.07, 0.45, 0.25 + Math.random() * 0.08),
+                roughness: 0.9,
+                metalness: 0.05,
+            });
+
+            for (let i = 0; i < trunkSegs; i++) {
+                const t = i / trunkSegs;
+                const rBottom = trunkBottomRadius * (1 - t * 0.6);
+                const rTop = trunkBottomRadius * (1 - (t + 1 / trunkSegs) * 0.6);
+                const segment = new THREE.Mesh(
+                    new THREE.CylinderGeometry(rTop, rBottom, segHeight, 10, 1),
+                    trunkMaterial
+                );
+                const yPos = i * segHeight + segHeight / 2;
+                // 轻微随机偏移模拟弯曲
+                const offsetX = (Math.random() - 0.5) * 0.06;
+                const offsetZ = (Math.random() - 0.5) * 0.06;
+                segment.position.set(offsetX, yPos, offsetZ);
+                segment.castShadow = true;
+                treeGroup.add(segment);
+
+                // 在分叉处加一点小节点
+                if (i > 0 && i < trunkSegs - 1) {
+                    const knot = new THREE.Mesh(
+                        new THREE.SphereGeometry(rBottom * 1.2, 6, 6),
+                        trunkMaterial
+                    );
+                    knot.position.set(offsetX, yPos - segHeight / 2, offsetZ);
+                    knot.scale.set(1, 0.4, 1);
+                    knot.castShadow = true;
+                    treeGroup.add(knot);
+                }
+            }
+
+            const trunkTopY = trunkHeight;
+
+            // ---- 树枝（细小圆柱连接树冠） ----
+            const branchCount = 6 + Math.floor(Math.random() * 4);
+            const branchMaterial = new THREE.MeshStandardMaterial({
+                color: new THREE.Color().setHSL(0.07, 0.4, 0.2),
+                roughness: 0.9,
+                metalness: 0.05,
+            });
+
+            for (let i = 0; i < branchCount; i++) {
+                const angle = (i / branchCount) * Math.PI * 2 + Math.random() * 0.3;
+                const elevation = 0.4 + Math.random() * 0.5;
+                const length = 0.3 + Math.random() * 0.6;
+                const branchRadius = 0.04 + Math.random() * 0.06;
+
+                const branch = new THREE.Mesh(
+                    new THREE.CylinderGeometry(branchRadius * 0.6, branchRadius, length, 5, 1),
+                    branchMaterial
+                );
+                const startY = trunkTopY * (0.6 + Math.random() * 0.35);
+                branch.position.set(
+                    Math.cos(angle) * (trunkTopRadius + 0.05),
+                    startY,
+                    Math.sin(angle) * (trunkTopRadius + 0.05)
+                );
+                branch.rotation.z = Math.cos(angle) * (0.4 + Math.random() * 0.3);
+                branch.rotation.x = Math.sin(angle) * (0.4 + Math.random() * 0.3);
+                branch.castShadow = true;
+                treeGroup.add(branch);
+            }
+
+            // ---- 树冠（球体簇） ----
+            const crownGroup = new THREE.Group();
+            const crownBaseY = trunkTopY - 0.2;
+            const crownCenterY = crownBaseY + 0.8;
+
+            // 颜色变化范围
+            const hueBase = 0.22 + Math.random() * 0.08;
+            const satBase = 0.45 + Math.random() * 0.2;
+            const ligBase = 0.3 + Math.random() * 0.15;
+
+            // 生成树冠球体
+            const sphereCount = 55 + Math.floor(Math.random() * 30);
+
+            for (let i = 0; i < sphereCount; i++) {
+                // 在扁椭球体内随机分布
+                const radiusMax = 0.6 + Math.random() * 0.9;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+
+                // 让分布更集中在表面附近（外部茂密）
+                const rFactor = 0.4 + 0.6 * Math.pow(Math.random(), 0.5);
+                const r = radiusMax * rFactor;
+
+                const x = r * Math.sin(phi) * Math.cos(theta);
+                const y = r * Math.cos(phi) * 0.75 + crownCenterY; // 垂直方向压缩，使树冠呈扁球形
+                const z = r * Math.sin(phi) * Math.sin(theta);
+
+                // 树冠底部稍微内收，避免碰到地面
+                const distFromCenter = Math.sqrt(x * x + ((y - crownCenterY) / 0.75) ** 2 + z * z);
+                if (y < crownBaseY + 0.3 && distFromCenter > 0.8) continue;
+
+                // 球体大小：外部大，内部小
+                const sizeFactor = 0.3 + 0.7 * (1 - (y - crownBaseY) / (trunkHeight * 0.9));
+                const size = 0.18 + 0.42 * (0.4 + 0.6 * Math.random()) * sizeFactor;
+
+                // 颜色随位置变化
+                const hueOffset = (y - crownBaseY) / trunkHeight * 0.06 - 0.03;
+                const lightOffset = (y - crownBaseY) / trunkHeight * 0.15 + 0.05;
+                const hue = hueBase + hueOffset + (Math.random() - 0.5) * 0.03;
+                const sat = satBase + (Math.random() - 0.5) * 0.1;
+                const lig = ligBase + lightOffset + (Math.random() - 0.5) * 0.08;
+
+                const material = new THREE.MeshStandardMaterial({
+                    color: new THREE.Color().setHSL(hue, sat, lig),
+                    roughness: 0.7 + Math.random() * 0.2,
+                    metalness: 0.0,
+                    envMapIntensity: 0.3,
+                });
+
+                const sphere = new THREE.Mesh(
+                    new THREE.SphereGeometry(size, 8, 7),
+                    material
+                );
+                sphere.position.set(x, y, z);
+                sphere.castShadow = true;
+                sphere.receiveShadow = true;
+                crownGroup.add(sphere);
+            }
+
+            // 添加一些高光点缀（更亮的球体模拟光照反射）
+            for (let i = 0; i < 8; i++) {
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI * 0.5;
+                const r = 0.8 + Math.random() * 0.6;
+                const x = r * Math.sin(phi) * Math.cos(theta);
+                const y = r * Math.cos(phi) * 0.7 + crownCenterY + 0.3;
+                const z = r * Math.sin(phi) * Math.sin(theta);
+
+                const highlight = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.08 + Math.random() * 0.1, 6, 6),
+                    new THREE.MeshStandardMaterial({
+                        color: new THREE.Color().setHSL(0.15, 0.3, 0.7 + Math.random() * 0.2),
+                        roughness: 0.3,
+                        metalness: 0.0,
+                        emissive: new THREE.Color().setHSL(0.15, 0.2, 0.1),
+                        emissiveIntensity: 0.2,
+                    })
+                );
+                highlight.position.set(x, y, z);
+                crownGroup.add(highlight);
+            }
+
+            treeGroup.add(crownGroup);
+
+            return treeGroup;
+        }
+
+        // ============================================================
+        // 创建树（主树）
+        // ============================================================
+        const tree = createTree();
+        tree.position.set(0, 0, 0);
+        scene.add(tree);
+
+        // 在周围添加几棵小树或灌木
+        function createSmallTree(scale) {
+            const t = createTree();
+            t.scale.set(scale, scale, scale);
+            return t;
+        }
+
+        // 在附近放置2棵小树
+        for (let i = 0; i < 2; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 3.5 + Math.random() * 1.5;
+            const smallTree = createSmallTree(0.45 + Math.random() * 0.15);
+            smallTree.position.set(
+                Math.cos(angle) * dist,
+                0,
+                Math.sin(angle) * dist
+            );
+            smallTree.rotation.y = Math.random() * Math.PI * 2;
+            scene.add(smallTree);
+        }
+
+        // 在更远处放几棵更小的树
+        for (let i = 0; i < 4; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 5.5 + Math.random() * 2;
+            const tinyTree = createSmallTree(0.2 + Math.random() * 0.15);
+            tinyTree.position.set(
+                Math.cos(angle) * dist,
+                0,
+                Math.sin(angle) * dist
+            );
+            tinyTree.rotation.y = Math.random() * Math.PI * 2;
+            scene.add(tinyTree);
+        }
+
+        // ============================================================
+        // 环境点缀：飘浮的发光粒子
+        // ============================================================
+        const particleCount = 150;
+        const particleGeo = new THREE.BufferGeometry();
+        const particlePos = new Float32Array(particleCount * 3);
+        const particleSizes = new Float32Array(particleCount);
+        const particleSpeeds = new Float32Array(particleCount);
+        const particleOffsets = new Float32Array(particleCount);
+
+        for (let i = 0; i < particleCount; i++) {
+            const radius = 1.5 + Math.random() * 5;
+            const angle = Math.random() * Math.PI * 2;
+            const height = 0.5 + Math.random() * 5;
+            particlePos[i * 3] = Math.cos(angle) * radius;
+            particlePos[i * 3 + 1] = height;
+            particlePos[i * 3 + 2] = Math.sin(angle) * radius;
+            particleSizes[i] = 0.02 + Math.random() * 0.06;
+            particleSpeeds[i] = 0.1 + Math.random() * 0.3;
+            particleOffsets[i] = Math.random() * Math.PI * 2;
+        }
+        particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
+        particleGeo.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
+
+        const particleMat = new THREE.PointsMaterial({
+            color: 0xffdd88,
+            size: 0.06,
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            sizeAttenuation: true,
+        });
+        const particles = new THREE.Points(particleGeo, particleMat);
+        scene.add(particles);
+
+        // ============================================================
+        // 动画循环
+        // ============================================================
+        const clock = new THREE.Clock();
+
+        function animate() {
+            const elapsed = clock.getElapsedTime();
+            const delta = clock.getDelta();
+
+            // 微风摇摆 — 主树
+            tree.rotation.z = Math.sin(elapsed * 0.4) * 0.008;
+            tree.rotation.x = Math.sin(elapsed * 0.3 + 0.5) * 0.005;
+
+            // 小树也摇摆
+            scene.children.forEach(child => {
+                if (child.isGroup && child !== tree && child.children.length > 0) {
+                    child.rotation.z = Math.sin(elapsed * 0.35 + child.position.x) * 0.01;
+                    child.rotation.x = Math.sin(elapsed * 0.25 + child.position.z) * 0.007;
+                }
+            });
+
+            // 粒子动画 — 缓慢螺旋上升
+            const positions = particles.geometry.attributes.position.array;
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+                const angle = Math.atan2(positions[i3 + 2], positions[i3]);
+                const radius = Math.sqrt(positions[i3] * positions[i3] + positions[i3 + 2] * positions[i3 + 2]);
+                const newAngle = angle + particleSpeeds[i] * 0.003;
+                positions[i3] = Math.cos(newAngle) * radius;
+                positions[i3 + 2] = Math.sin(newAngle) * radius;
+                // 上下浮动
+                positions[i3 + 1] += Math.sin(elapsed * particleSpeeds[i] + particleOffsets[i]) * 0.002;
+                // 保持在范围内
+                if (positions[i3 + 1] > 6) positions[i3 + 1] = 0.5;
+                if (positions[i3 + 1] < 0.3) positions[i3 + 1] = 6;
+            }
+            particles.geometry.attributes.position.needsUpdate = true;
+
+            // 粒子大小闪烁
+            particleMat.size = 0.05 + Math.sin(elapsed * 0.5) * 0.015;
+
+            controls.update();
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+
+        // ============================================================
+        // 窗口自适应
+        // ============================================================
+        window.addEventListener('resize', () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        });
+
+        // 点击切换自动旋转
+        renderer.domElement.addEventListener('click', () => {
+            controls.autoRotate = !controls.autoRotate;
+            const info = document.getElementById('info');
+            if (controls.autoRotate) {
+                info.textContent = '🖱 拖拽旋转 · 滚轮缩放 · 自动旋转中';
+            } else {
+                info.textContent = '🖱 拖拽旋转 · 滚轮缩放 · 点击恢复自动旋转';
+            }
+        });
+
+        console.log('🌳 Three.js 树木模型已加载！');
+    </script>
+
+</body>
+</html>

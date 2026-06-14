@@ -51,12 +51,21 @@ export interface ModelChatRequest {
   temperature?: number;
   maxTokens?: number;
   metadata?: Record<string, unknown>;
+  responseFormat?: StructuredResponseFormat;
+}
+
+export interface StructuredResponseFormat {
+  type: "json_schema";
+  name: string;
+  schema: Record<string, unknown>;
+  description?: string;
+  strict?: boolean;
 }
 
 export interface BaseModelConfig {
   name: string;
   kind: ProviderKind;
-  model: string;
+  model?: string;
   provider?: string;
   modelIds?: string[];
   temperature?: number;
@@ -83,6 +92,7 @@ export interface CommandModelConfig extends BaseModelConfig {
   env?: Record<string, string>;
   timeoutMs?: number;
   protocol?: "sandeval-json" | "plain-final";
+  workflowAdapter?: "codex" | "claude-code" | "jsonl" | "none" | string;
 }
 
 export interface CustomModelConfig extends BaseModelConfig {
@@ -111,7 +121,15 @@ export interface AuthConfig {
   env?: Record<string, string>;
 }
 
-export type SandboxMode = "local" | "docker" | "podman" | "bubblewrap" | "firejail" | "nsjail";
+export type SandboxMode = "local" | "docker" | "podman" | "bubblewrap" | "firejail" | "nsjail" | "external";
+
+export interface ExternalSandboxConfig {
+  command: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  timeoutMs?: number;
+}
 
 export interface SandboxConfig {
   mode?: SandboxMode;
@@ -124,8 +142,45 @@ export interface SandboxConfig {
   network?: boolean;
   env?: Record<string, string>;
   sandboxExtraArgs?: string[];
+  external?: ExternalSandboxConfig;
   preserveRuns?: number;
   copyTaskFiles?: boolean;
+}
+
+export type GitToolPermission = "off" | "read" | "full";
+
+export interface ToolsConfig {
+  files?: boolean;
+  shell?: boolean;
+  git?: GitToolPermission;
+  gitRemote?: boolean;
+  packageManager?: boolean;
+  maxCommandTimeoutMs?: number;
+  blockedCommands?: string[];
+  allowedHosts?: string[];
+}
+
+export interface RuleConfig {
+  name: string;
+  description?: string;
+  prompt: string;
+  enabled?: boolean;
+}
+
+export interface SkillsConfig {
+  localDir?: string;
+  globalDir?: string;
+}
+
+export interface AppliedRule {
+  name: string;
+  description?: string;
+}
+
+export interface AppliedSkill {
+  name: string;
+  description?: string;
+  source: "builtin" | "local" | "global";
 }
 
 export interface AgentConfig {
@@ -133,13 +188,36 @@ export interface AgentConfig {
   systemPrompt?: string;
   toolTimeoutMs?: number;
   autoRunVerification?: boolean;
+  planMode?: "off" | "prompt" | "enforced";
+  planApproval?: "auto" | "interactive";
+}
+
+export interface ScoringDimensionConfig {
+  key: string;
+  label?: string;
+  description?: string;
+  weight?: number;
 }
 
 export interface ScoringConfig {
   enabled?: boolean;
+  mode?: "single" | "multi";
   rubric?: string;
+  maxRetries?: number;
   minScore?: number;
   maxScore?: number;
+  dimensions?: ScoringDimensionConfig[];
+}
+
+export interface ArenaConfig {
+  concurrency?: number;
+}
+
+export interface WorkflowConfig {
+  compact?: boolean;
+  collapseSimilar?: boolean;
+  maxLiveEvents?: number;
+  maxWorkflowEvents?: number;
 }
 
 export interface StorageConfig {
@@ -175,8 +253,13 @@ export interface SandEvalConfig {
   sandbox?: SandboxConfig;
   agent?: AgentConfig;
   scoring?: ScoringConfig;
+  arena?: ArenaConfig;
+  workflow?: WorkflowConfig;
   storage?: StorageConfig;
   ui?: UiConfig;
+  tools?: ToolsConfig;
+  rules?: RuleConfig[];
+  skills?: SkillsConfig;
   contexts?: ContextConfig[];
   models: ModelConfig[];
 }
@@ -218,10 +301,63 @@ export interface RunEvent {
 
 export type RunEventHandler = (event: RunEvent) => void;
 
+export type WorkflowEventKind =
+  | "status"
+  | "assistant-message"
+  | "tool-call"
+  | "tool-result"
+  | "command"
+  | "file-change"
+  | "result"
+  | "usage"
+  | "error"
+  | "raw";
+
+export interface WorkflowEvent {
+  id: string;
+  adapter: string;
+  kind: WorkflowEventKind;
+  phase?: "plan" | "think" | "tool" | "command" | "file" | "verify" | "finish" | "score" | "raw";
+  status?: "pending" | "running" | "success" | "error";
+  at?: string;
+  turn?: number;
+  title: string;
+  message?: string;
+  toolName?: string;
+  command?: string;
+  path?: string;
+  durationMs?: number;
+  count?: number;
+  level?: "info" | "success" | "warning" | "error";
+  rawType?: string;
+  raw?: Record<string, unknown>;
+}
+
+export interface WorkflowRawArtifact {
+  adapter: string;
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number | null;
+  timedOut?: boolean;
+  jsonLineCount?: number;
+}
+
 export interface FinishPayload {
   summary?: string;
   instructions?: string;
   artifacts?: string[];
+}
+
+export interface PlanRevision {
+  feedback: string;
+  content: string;
+}
+
+export interface RunPlan {
+  content: string;
+  approved: boolean;
+  approvalMode: "auto" | "interactive";
+  revisions: PlanRevision[];
 }
 
 export interface AgentRunResult {
@@ -239,6 +375,13 @@ export interface AgentRunResult {
   files: ArtifactFile[];
   usage: Usage;
   turns: number;
+  activeRules?: AppliedRule[];
+  activeSkills?: AppliedSkill[];
+  plan?: RunPlan;
+  toolPermissions?: ToolsConfig;
+  workflowAdapter?: string;
+  workflowEvents?: WorkflowEvent[];
+  workflowRaw?: WorkflowRawArtifact[];
 }
 
 export interface ArtifactFile {
@@ -249,12 +392,22 @@ export interface ArtifactFile {
 
 export interface ScoreResult {
   score: number;
+  overall?: number;
+  dimensions?: ScoreDimensionResult[];
   summary: string;
   strengths: string[];
   weaknesses: string[];
   userFeedbackImpact?: string;
   raw?: string;
   usage?: Usage;
+}
+
+export interface ScoreDimensionResult {
+  key: string;
+  label?: string;
+  score: number;
+  weight: number;
+  summary?: string;
 }
 
 export interface RunReport {

@@ -81,6 +81,9 @@ export class Sandbox {
       case "nsjail":
         result = await this.runNsJail(command, args, timeoutMs);
         break;
+      case "external":
+        result = await this.runExternal(command, args, timeoutMs);
+        break;
       case "local":
         result = await this.runLocal(command, args, timeoutMs);
         break;
@@ -290,6 +293,44 @@ export class Sandbox {
     });
   }
 
+  private async runExternal(command: string, args: string[], timeoutMs?: number): Promise<CommandResult> {
+    const external = this.config.external;
+    if (!external?.command) {
+      throw new Error("sandbox.mode is external but sandbox.external.command is not configured.");
+    }
+    const encodedArgs = JSON.stringify(args);
+    const externalArgs = (external.args ?? ["{{command}}", "{{argsJson}}"]).flatMap((arg) =>
+      expandExternalArg(arg, {
+        workspace: this.root,
+        command,
+        args,
+        argsJson: encodedArgs
+      })
+    );
+    const raw = await runProcess({
+      command: external.command,
+      args: externalArgs,
+      cwd: external.cwd ? path.resolve(external.cwd) : this.root,
+      env: { ...this.processEnv(), ...external.env },
+      timeoutMs: this.timeout(timeoutMs ?? external.timeoutMs),
+      displayCommand: command,
+      displayArgs: args
+    });
+    const parsed = parseExternalResult(raw.stdout);
+    if (!parsed) {
+      return raw;
+    }
+    return {
+      command,
+      args,
+      exitCode: parsed.exitCode ?? raw.exitCode,
+      stdout: parsed.stdout ?? "",
+      stderr: parsed.stderr ?? "",
+      durationMs: parsed.durationMs ?? raw.durationMs,
+      timedOut: parsed.timedOut ?? raw.timedOut
+    };
+  }
+
   private timeout(timeoutMs?: number): number {
     return timeoutMs ?? this.config.commandTimeoutMs ?? 120000;
   }
@@ -324,6 +365,44 @@ export class Sandbox {
       }
     }
   }
+}
+
+function expandExternalArg(
+  template: string,
+  values: { workspace: string; command: string; args: string[]; argsJson: string }
+): string[] {
+  if (template === "{{args}}") {
+    return values.args;
+  }
+  return [
+    template
+      .replaceAll("{{workspace}}", values.workspace)
+      .replaceAll("{{sandbox}}", values.workspace)
+      .replaceAll("{{command}}", values.command)
+      .replaceAll("{{argsJson}}", values.argsJson)
+  ];
+}
+
+function parseExternalResult(stdout: string): Partial<CommandResult> | undefined {
+  const trimmed = stdout.trim();
+  if (!trimmed.startsWith("{")) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as Partial<CommandResult>;
+    if (typeof parsed.exitCode === "number" || parsed.exitCode === null) {
+      return {
+        exitCode: parsed.exitCode,
+        stdout: typeof parsed.stdout === "string" ? parsed.stdout : "",
+        stderr: typeof parsed.stderr === "string" ? parsed.stderr : "",
+        durationMs: typeof parsed.durationMs === "number" ? parsed.durationMs : undefined,
+        timedOut: typeof parsed.timedOut === "boolean" ? parsed.timedOut : undefined
+      };
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 async function runProcess(options: {

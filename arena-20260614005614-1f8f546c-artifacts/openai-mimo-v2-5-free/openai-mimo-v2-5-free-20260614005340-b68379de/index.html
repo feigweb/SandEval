@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TechPedia - 科技百科</title>
+    <style>
+        /* ===== Reset & Base ===== */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: "Linux Libertine", "Georgia", "Times", serif;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #202122;
+            background: #f8f9fa;
+        }
+        a { color: #0645ad; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        a:visited { color: #0b0080; }
+
+        /* ===== Header ===== */
+        .site-header {
+            background: #fff;
+            border-bottom: 1px solid #a7d7f9;
+            padding: 8px 0;
+        }
+        .header-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+        }
+        .logo-icon {
+            width: 48px; height: 48px;
+            background: linear-gradient(135deg, #3366cc, #9933cc);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-size: 22px; font-weight: bold;
+        }
+        .logo-text h1 { font-size: 20px; color: #000; font-weight: normal; }
+        .logo-text p { font-size: 11px; color: #54595d; }
+        .search-box {
+            display: flex;
+            border: 1px solid #a2a9b1;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .search-box input {
+            border: none; outline: none;
+            padding: 6px 10px; font-size: 13px;
+            width: 260px;
+        }
+        .search-box button {
+            background: #f8f9fa; border: none; border-left: 1px solid #a2a9b1;
+            padding: 6px 14px; cursor: pointer; font-size: 13px; color: #202122;
+        }
+        .search-box button:hover { background: #eaecf0; }
+
+        /* ===== Tabs ===== */
+        .tabs-bar {
+            background: #fff;
+            border-bottom: 1px solid #a7d7f9;
+        }
+        .tabs-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            gap: 0;
+        }
+        .tab-btn {
+            background: none; border: none; cursor: pointer;
+            padding: 8px 16px; font-size: 13px; color: #0645ad;
+            border-bottom: 3px solid transparent;
+            font-family: inherit;
+        }
+        .tab-btn:hover { background: #eaecf0; }
+        .tab-btn.active {
+            color: #202122;
+            border-bottom-color: #3366cc;
+            font-weight: bold;
+        }
+
+        /* ===== Layout ===== */
+        .main-layout {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            display: flex;
+            gap: 24px;
+        }
+
+        /* ===== Sidebar ===== */
+        .sidebar {
+            width: 200px;
+            flex-shrink: 0;
+        }
+        .sidebar-box {
+            background: #fff;
+            border: 1px solid #a2a9b1;
+            padding: 8px 0;
+            margin-bottom: 16px;
+        }
+        .sidebar-title {
+            padding: 4px 12px;
+            font-weight: bold;
+            font-size: 13px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #eaecf0;
+            margin-bottom: 4px;
+        }
+        .sidebar-list {
+            list-style: none;
+        }
+        .sidebar-list li a {
+            display: block;
+            padding: 3px 12px;
+            font-size: 13px;
+            color: #0645ad;
+        }
+        .sidebar-list li a:hover { background: #eaecf0; }
+        .sidebar-list li a.active-link {
+            background: #eaecf0;
+            font-weight: bold;
+        }
+
+        /* ===== Content ===== */
+        .content {
+            flex: 1;
+            min-width: 0;
+        }
+        .article-card {
+            background: #fff;
+            border: 1px solid #a2a9b1;
+            padding: 24px 32px;
+            margin-bottom: 24px;
+            display: none;
+        }
+        .article-card.active { display: block; }
+        .article-card h2 {
+            font-size: 28px;
+            border-bottom: 1px solid #a2a9b1;
+            padding-bottom: 4px;
+            margin-bottom: 16px;
+            font-weight: normal;
+            font-family: "Linux Libertine", "Georgia", serif;
+        }
+        .article-card h3 {
+            font-size: 20px;
+            margin: 20px 0 8px;
+            font-weight: normal;
+            border-bottom: 1px solid #eaecf0;
+            padding-bottom: 2px;
+        }
+        .article-card p { margin-bottom: 12px; text-align: justify; }
+
+        /* Infobox */
+        .infobox {
+            float: right;
+            width: 280px;
+            margin: 0 0 16px 24px;
+            border: 1px solid #a2a9b1;
+            border-collapse: collapse;
+            font-size: 13px;
+            background: #f8f9fa;
+        }
+        .infobox caption, .infobox-title {
+            background: #cee0f2;
+            padding: 8px;
+            font-weight: bold;
+            font-size: 16px;
+            text-align: center;
+        }
+        .infobox-header {
+            text-align: center;
+            padding: 12px;
+            background: #e8edf3;
+        }
+        .infobox-header img {
+            max-width: 200px; max-height: 120px;
+        }
+        .company-logo-placeholder {
+            width: 180px; height: 80px;
+            margin: 0 auto;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 36px; font-weight: bold;
+            border-radius: 8px;
+        }
+        .infobox tr { border-top: 1px solid #ddd; }
+        .infobox td { padding: 6px 10px; vertical-align: top; }
+        .infobox td:first-child { font-weight: bold; white-space: nowrap; width: 90px; }
+
+        /* Reference / ref */
+        sup.ref {
+            font-size: 10px;
+            color: #0645ad;
+            cursor: pointer;
+        }
+
+        /* Contents box */
+        .toc-box {
+            display: inline-block;
+            background: #f8f9fa;
+            border: 1px solid #a2a9b1;
+            padding: 10px 16px;
+            margin: 0 0 16px 0;
+            font-size: 13px;
+        }
+        .toc-box .toc-title { font-weight: bold; margin-bottom: 6px; }
+        .toc-box ol { margin-left: 20px; }
+        .toc-box li { margin: 3px 0; }
+        .toc-box a { color: #0645ad; }
+
+        /* Footer */
+        .site-footer {
+            background: #fff;
+            border-top: 1px solid #a2a9b1;
+            padding: 16px 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #54595d;
+            margin-top: 20px;
+        }
+
+        /* Breadcrumb */
+        .breadcrumb {
+            font-size: 12px;
+            color: #54595d;
+            margin-bottom: 12px;
+        }
+        .breadcrumb a { color: #0645ad; font-size: 12px; }
+
+        /* Tag */
+        .tag {
+            display: inline-block;
+            background: #e8edf3;
+            border: 1px solid #c8ccd1;
+            border-radius: 2px;
+            padding: 1px 8px;
+            font-size: 11px;
+            margin: 2px;
+            color: #54595d;
+        }
+
+        /* Categories */
+        .catlinks {
+            background: #f8f9fa;
+            border: 1px solid #a2a9b1;
+            padding: 6px 12px;
+            margin-top: 20px;
+            font-size: 12px;
+        }
+        .catlinks a {
+            background: #e8edf3;
+            border-radius: 2px;
+            padding: 2px 8px;
+            margin: 2px;
+            display: inline-block;
+            border: 1px solid #c8ccd1;
+            color: #0645ad;
+        }
+
+        /* Home page */
+        .home-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .home-card {
+            background: #fff;
+            border: 1px solid #a2a9b1;
+            padding: 20px;
+            cursor: pointer;
+            transition: box-shadow 0.2s;
+        }
+        .home-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+        .home-card-logo {
+            width: 100%;
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            font-weight: bold;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .home-card h3 { font-size: 18px; margin-bottom: 6px; }
+        .home-card p { font-size: 13px; color: #54595d; }
+
+        /* Search results */
+        .search-result-item {
+            padding: 12px 0;
+            border-bottom: 1px solid #eaecf0;
+        }
+        .search-result-item h4 { font-size: 16px; margin-bottom: 4px; }
+        .search-result-item p { font-size: 13px; color: #54595d; }
+        .search-result-item .highlight { background: #fff59d; padding: 1px 2px; }
+
+        /* Print */
+        @media print {
+            .sidebar, .tabs-bar, .search-box { display: none; }
+            .main-layout { display: block; }
+            .article-card { border: none; display: block !important; }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .infobox { float: none; width: 100%; margin: 0 0 16px 0; }
+            .search-box input { width: 160px; }
+            .main-layout { padding: 12px; }
+            .article-card { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ===== Header ===== -->
+<header class="site-header">
+    <div class="header-inner">
+        <div class="logo" onclick="navigateTo('home')">
+            <div class="logo-icon">T</div>
+            <div class="logo-text">
+                <h1>TechPedia</h1>
+                <p>科技百科全书</p>
+            </div>
+        </div>
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="搜索科技百科..." onkeydown="if(event.key==='Enter')doSearch()">
+            <button onclick="doSearch()">🔍 搜索</button>
+        </div>
+    </div>
+</header>
+
+<!-- ===== Tabs ===== -->
+<div class="tabs-bar">
+    <div class="tabs-inner">
+        <button class="tab-btn active" id="tab-main" onclick="navigateTo('home')">主页</button>
+        <button class="tab-btn" id="tab-google" onclick="navigateTo('google')">Google</button>
+        <button class="tab-btn" id="tab-microsoft" onclick="navigateTo('microsoft')">Microsoft</button>
+        <button class="tab-btn" id="tab-apple" onclick="navigateTo('apple')">Apple</button>
+        <button class="tab-btn" id="tab-openai" onclick="navigateTo('openai')">OpenAI</button>
+    </div>
+</div>
+
+<!-- ===== Main ===== -->
+<div class="main-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-box">
+            <div class="sidebar-title">目录</div>
+            <ul class="sidebar-list" id="sidebarTOC">
+                <li><a href="javascript:void(0)" class="active-link" onclick="navigateTo('home')">🏠 主页</a></li>
+                <li><a href="javascript:void(0)" onclick="navigateTo('google')">Google</a></li>
+                <li><a href="javascript:void(0)" onclick="navigateTo('microsoft')">Microsoft</a></li>
+                <li><a href="javascript:void(0)" onclick="navigateTo('apple')">Apple</a></li>
+                <li><a href="javascript:void(0)" onclick="navigateTo('openai')">OpenAI</a></li>
+            </ul>
+        </div>
+        <div class="sidebar-box">
+            <div class="sidebar-title">快捷操作</div>
+            <ul class="sidebar-list">
+                <li><a href="javascript:window.print()">🖨️ 打印页面</a></li>
+                <li><a href="javascript:navigateTo('home')">🏠 返回主页</a></li>
+            </ul>
+        </div>
+    </aside>
+
+    <!-- Content -->
+    <main class="content" id="mainContent">
+
+        <!-- ===== HOME ===== -->
+        <div class="article-card active" id="page-home">
+            <h2>欢迎来到 TechPedia 科技百科</h2>
+            <p style="font-size:15px;color:#54595d;">
+                TechPedia 是一个开放的科技百科全书，旨在为读者提供关于全球领先科技公司的全面、准确的百科信息。
+                本百科涵盖公司的历史沿革、核心业务、重大事件及行业影响等方面内容。
+            </p>
+
+            <div class="home-grid">
+                <div class="home-card" onclick="navigateTo('google')">
+                    <div class="home-card-logo" style="background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;">G</div>
+                    <h3>Google</h3>
+                    <p>全球最大的搜索引擎公司，Alphabet 旗下子公司。以搜索引擎、云计算、人工智能等业务闻名于世。</p>
+                </div>
+                <div class="home-card" onclick="navigateTo('microsoft')">
+                    <div class="home-card-logo" style="background:linear-gradient(135deg,#00a4ef,#7fba00);color:#fff;">M</div>
+                    <h3>Microsoft</h3>
+                    <p>全球最大的软件公司之一，以 Windows 操作系统、Office 办公套件和 Azure 云计算平台著称。</p>
+                </div>
+                <div class="home-card" onclick="navigateTo('apple')">
+                    <div class="home-card-logo" style="background:linear-gradient(135deg,#555,#222);color:#fff;">🍎</div>
+                    <h3>Apple</h3>
+                    <p>全球市值最高的科技公司之一，以 iPhone、Mac、iPad 等创新硬件产品和生态系统闻名。</p>
+                </div>
+                <div class="home-card" onclick="navigateTo('openai')">
+                    <div class="home-card-logo" style="background:linear-gradient(135deg,#10a37f,#1a7f64);color:#fff;">AI</div>
+                    <h3>OpenAI</h3>
+                    <p>领先的人工智能研究公司，ChatGPT 和 GPT 系列模型的开发者，致力于通用人工智能（AGI）研究。</p>
+                </div>
+            </div>
+
+            <div class="catlinks" style="margin-top:32px;">
+                <strong>📌 热门话题：</strong>
+                <a href="javascript:navigateTo('google')">搜索引擎</a>
+                <a href="javascript:navigateTo('microsoft')">操作系统</a>
+                <a href="javascript:navigateTo('apple')">智能手机</a>
+                <a href="javascript:navigateTo('openai')">人工智能</a>
+                <a href="javascript:navigateTo('openai')">大语言模型</a>
+                <a href="javascript:navigateTo('google')">云计算</a>
+            </div>
+        </div>
+
+        <!-- ===== GOOGLE ===== -->
+        <div class="article-card" id="page-google">
+            <div class="breadcrumb">
+                <a href="javascript:navigateTo('home')">TechPedia</a> &gt;
+                <a href="javascript:navigateTo('home')">公司</a> &gt;
+                <span>Google</span>
+            </div>
+
+            <h2>Google（谷歌）</h2>
+
+            <table class="infobox">
+                <tr><td colspan="2" class="infobox-title">Google</td></tr>
+                <tr><td colspan="2" class="infobox-header">
+                    <div class="company-logo-placeholder" style="background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;font-family:sans-serif;">Google</div>
+                </td></tr>
+                <tr><td>公司类型</td><td>子公司（Alphabet Inc.）</td></tr>
+                <tr><td>成立日期</td><td>1998年9月4日</td></tr>
+                <tr><td>创始人</td><td>拉里·佩奇、谢尔盖·布林</td></tr>
+                <tr><td>总部</td><td>美国加利福尼亚州 山景城</td></tr>
+                <tr><td>CEO</td><td>桑达尔·皮查伊（Sundar Pichai）</td></tr>
+                <tr><td>关键人物</td><td>拉里·佩奇、谢尔盖·布林</td></tr>
+                <tr><td>营业额</td><td>约 3,074 亿美元（2023年）</td></tr>
+                <tr><td>员工数</td><td>约 182,000 人（2024年）</td></tr>
+                <tr><td>母公司</td><td>Alphabet Inc.</td></tr>
+                <tr><td>网站</td><td><a href="https://about.google" target="_blank">about.google</a></td></tr>
+            </table>
+
+            <p>
+                <strong>Google</strong>（中文名：<strong>谷歌</strong>）是一家源自美国的跨国科技公司，专注于互联网搜索、云计算、广告技术、
+                人工智能、浏览器、操作系统和硬件产品等领域。Google 由斯坦福大学博士研究生<strong>拉里·佩奇</strong>（Larry Page）
+                和<strong>谢尔盖·布林</strong>（Sergey Brin）于 1998 年共同创立，最初作为一个学术搜索引擎项目诞生于斯坦福大学宿舍。
+            </p>
+
+            <div class="toc-box">
+                <div class="toc-title">📑 目录</div>
+                <ol>
+                    <li><a href="#g-history" onclick="scrollToSection('g-history')">历史</a></li>
+                    <li><a href="#g-business" onclick="scrollToSection('g-business')">核心业务</a></li>
+                    <li><a href="#g-ai" onclick="scrollToSection('g-ai')">人工智能</a></li>
+                    <li><a href="#g-culture" onclick="scrollToSection('g-culture')">企业文化与影响</a></li>
+                    <li><a href="#g-controversy" onclick="scrollToSection('g-controversy')">争议</a></li>
+                </ol>
+            </div>
+
+            <h3 id="g-history">历史</h3>
+            <p>
+                Google 的前身是 1996 年由佩奇和布林开发的 <strong>BackRub</strong> 搜索引擎项目。该项目利用网页之间的链接关系来评估网页的重要性，
+                这种方法后来成为 Google 核心搜索算法 <strong>PageRank</strong> 的基础。1998 年 9 月 4 日，Google 公司在加利福尼亚州
+                门洛帕克的一间车库中正式成立。两位创始人从 Sun Microsystems 联合创始人安迪·贝克托尔谢海姆处获得了 10 万美元的天使投资。
+            </p>
+            <p>
+                2004 年 8 月 19 日，Google 在纳斯达克证券交易所上市，IPO 价格为每股 85 美元。上市首日收盘价达到 100.34 美元，
+                使公司市值达到约 270 亿美元。2015 年，Google 进行了企业结构重组，成立了控股公司 <strong>Alphabet Inc.</strong>，
+                Google 成为 Alphabet 的主要子公司。
+            </p>
+
+            <h3 id="g-business">核心业务</h3>
+            <p>
+                Google 的核心业务涵盖多个领域：
+            </p>
+            <ul style="margin:8px 0 12px 24px;">
+                <li><strong>Google 搜索</strong> — 全球使用最广泛的搜索引擎，占据全球搜索市场约 92% 的份额。</li>
+                <li><strong>Google Ads</strong> — 全球最大的在线广告平台，是 Google 最主要的收入来源。</li>
+                <li><strong>Google Cloud</strong> — 企业级云计算平台，提供计算、存储、机器学习等服务，是 AWS 和 Azure 的主要竞争对手。</li>
+                <li><strong>Android</strong> — 全球最大的移动操作系统，运行在超过 30 亿台活跃设备上。</li>
+                <li><strong>YouTube</strong> — 全球最大的视频分享平台，拥有超过 20 亿月活跃用户。</li>
+                <li><strong>Google Workspace</strong> — 包括 Gmail、Google Docs、Google Drive 等在内的企业办公套件。</li>
+                <li><strong>Chrome</strong> — 全球市场份额最高的网络浏览器。</li>
+                <li><strong>Google Maps</strong> — 全球领先的在线地图和导航服务。</li>
+            </ul>
+
+            <h3 id="g-ai">人工智能</h3>
+            <p>
+                Google 是全球人工智能研究的领军企业之一。其在 AI 领域的里程碑事件包括：
+            </p>
+            <p>
+                <strong>AlphaGo</strong>（2016年）：Google DeepMind 开发的围棋人工智能程序击败了世界围棋冠军李世石，
+                这被视为人工智能发展史上的标志性事件，向世界展示了深度学习技术的巨大潜力。
+            </p>
+            <p>
+                <strong>Bard / Gemini</strong>：2023 年，Google 推出了基于大语言模型的对话式 AI 产品 Bard（后更名为 Gemini），
+                与 OpenAI 的 ChatGPT 展开竞争。Gemini 系列模型在多项基准测试中展现了强大的多模态能力。
+            </p>
+            <p>
+                Google 还在自动驾驶（Waymo）、医疗健康（DeepMind AlphaFold）、量子计算（Google Sycamore）等前沿领域持续投入研究。
+                2019 年，Google 宣布实现了"量子优越性"（Quantum Supremacy），其量子处理器 Sycamore 在 200 秒内完成了传统超级计算机
+                需要约 10,000 年才能完成的计算任务。
+            </p>
+
+            <h3 id="g-culture">企业文化与影响</h3>
+            <p>
+                Google 以其独特的企业文化闻名。公司早期推行的"<strong>不作恶</strong>"（Don't be evil）信条成为科技行业的标志性口号。
+                Google 以自由、开放的工作环境著称，提供丰富的员工福利，包括免费餐饮、健身设施、按摩服务等。
+            </p>
+            <p>
+                Google 对互联网行业的影响是深远的。它重新定义了人们获取信息的方式，推动了互联网广告行业的变革，
+                并通过 Android 系统改变了全球移动通信格局。截至 2024 年，Alphabet 的市值超过 1.7 万亿美元，
+                是全球市值最高的公司之一。
+            </p>
+
+            <h3 id="g-controversy">争议</h3>
+            <p>
+                Google 也面临着诸多争议，包括搜索引擎垄断、数据隐私保护、内容审查、税收问题等。
+                美国司法部于 2020 年对 Google 提起了反垄断诉讼，指控其通过支付巨额费用给苹果等公司来维持搜索引擎的默认地位，
+                构成了对搜索引擎市场的垄断。2024 年 8 月，美国联邦法官裁定 Google 在搜索领域确实构成了垄断。
+            </p>
+
+            <div class="catlinks">
+                <strong>分类：</strong>
+                <a href="#">跨国公司</a>
+                <a href="#">搜索引擎</a>
+                <a href="#">人工智能</a>
+                <a href="#">云计算</a>
+                <a href="#">Alphabet</a>
+                <a href="#">1998年成立</a>
+                <a href="#">加利福尼亚州</a>
+            </div>
+        </div>
+
+        <!-- ===== MICROSOFT ===== -->
+        <div class="article-card" id="page-microsoft">
+            <div class="breadcrumb">
+                <a href="javascript:navigateTo('home')">TechPedia</a> &gt;
+                <a href="javascript:navigateTo('home')">公司</a> &gt;
+                <span>Microsoft</span>
+            </div>
+
+            <h2>Microsoft（微软）</h2>
+
+            <table class="infobox">
+                <tr><td colspan="2" class="infobox-title">Microsoft</td></tr>
+                <tr><td colspan="2" class="infobox-header">
+                    <div class="company-logo-placeholder" style="background:linear-gradient(135deg,#00a4ef,#7fba00);color:#fff;font-family:sans-serif;">Microsoft</div>
+                </td></tr>
+                <tr><td>公司类型</td><td>上市公司</td></tr>
+                <tr><td>成立日期</td><td>1975年4月4日</td></tr>
+                <tr><td>创始人</td><td>比尔·盖茨、保罗·艾伦</td></tr>
+                <tr><td>总部</td><td>美国华盛顿州 雷德蒙德</td></tr>
+                <tr><td>CEO</td><td>萨提亚·纳德拉（Satya Nadella）</td></tr>
+                <tr><td>关键人物</td><td>比尔·盖茨、史蒂夫·鲍尔默</td></tr>
+                <tr><td>营业额</td><td>约 2,119 亿美元（2023财年）</td></tr>
+                <tr><td>员工数</td><td>约 221,000 人（2024年）</td></tr>
+                <tr><td>股票代码</td><td>MSFT（NASDAQ）</td></tr>
+                <tr><td>网站</td><td><a href="https://www.microsoft.com" target="_blank">microsoft.com</a></td></tr>
+            </table>
+
+            <p>
+                <strong>Microsoft</strong>（中文名：<strong>微软</strong>）是一家总部位于美国华盛顿州雷德蒙德的跨国科技公司，
+                由<strong>比尔·盖茨</strong>（Bill Gates）和<strong>保罗·艾伦</strong>（Paul Allen）于 1975 年创立。
+                微软是全球历史上市值最高的公司之一，以开发、制造、授权和支持范围广泛的软件产品、
+                消费电子产品和计算机服务而闻名于世。
+            </p>
+
+            <div class="toc-box">
+                <div class="toc-title">📑 目录</div>
+                <ol>
+                    <li><a href="#m-history" onclick="scrollToSection('m-history')">历史</a></li>
+                    <li><a href="#m-windows" onclick="scrollToSection('m-windows')">Windows 操作系统</a></li>
+                    <li><a href="#m-cloud" onclick="scrollToSection('m-cloud')">云计算与 Azure</a></li>
+                    <li><a href="#m-ai" onclick="scrollToSection('m-ai')">人工智能</a></li>
+                    <li><a href="#m-gaming" onclick="scrollToSection('m-gaming')">游戏与 Xbox</a></li>
+                    <li><a href="#m-impact" onclick="scrollToSection('m-impact')">行业影响</a></li>
+                </ol>
+            </div>
+
+            <h3 id="m-history">历史</h3>
+            <p>
+                1975 年，19 岁的比尔·盖茨和好友保罗·艾伦在《大众电子》杂志上看到了 Altair 8800 微型计算机的封面后，
+                联系了 MITS 公司创始人埃德·罗伯茨，表示可以为 Altair 开发 BASIC 解释器。他们的演示成功后，
+                两人在阿尔伯克基创立了 Microsoft，公司名称来源于"microcomputer"（微型计算机）和"software"（软件）两个词的组合。
+            </p>
+            <p>
+                1980 年，微软与 IBM 达成了一项改变历史的协议：为 IBM 的个人电脑提供操作系统。微软从西雅图计算机产品公司
+                以约 5 万美元的价格获得了 QDOS 操作系统的授权，并在此基础上开发了 MS-DOS。关键在于，微软保留了向其他
+                厂商授权该系统的权利，这使 MS-DOS 迅速成为行业标准。
+            </p>
+            <p>
+                1985 年，微软推出了第一个版本的 <strong>Windows</strong> 操作系统，此后 Windows 系列逐渐统治了个人电脑操作系统市场。
+                1986 年 3 月 13 日，微软在纳斯达克上市，IPO 价格为每股 21 美元。比尔·盖茨在 31 岁时成为美国最年轻的亿万富翁。
+            </p>
+
+            <h3 id="m-windows">Windows 操作系统</h3>
+            <p>
+                Windows 是微软最著名的产品线，也是全球使用最广泛的个人电脑操作系统。自 1985 年首版发布以来，
+                Windows 经历了多次重大更新：<strong>Windows 3.1</strong>（1992）、<strong>Windows 95</strong>（1995）、
+                <strong>Windows XP</strong>（2001）、<strong>Windows 7</strong>（2009）、<strong>Windows 10</strong>（2015）
+                和 <strong>Windows 11</strong>（2021）。
+            </p>
+            <p>
+                其中，<strong>Windows 95</strong> 的发布被认为是一个里程碑事件。它引入了"开始"菜单、任务栏和文件管理器
+                等标志性用户界面元素，使个人电脑操作变得更加直观，极大地推动了 PC 在家庭和办公环境中的普及。
+                截至 2024 年，Windows 在全球桌面操作系统市场中占据约 72% 的份额。
+            </p>
+
+            <h3 id="m-cloud">云计算与 Azure</h3>
+            <p>
+                <strong>Microsoft Azure</strong> 是微软的云计算平台，也是全球第二大云计算服务商（仅次于 AWS）。
+                Azure 提供包括虚拟机、数据库、AI 服务、DevOps 工具等在内的数百种云服务。
+            </p>
+            <p>
+                云计算战略是微软在 <strong>萨提亚·纳德拉</strong>（Satya Nadella）担任 CEO 后的重大转型方向。
+                纳德拉于 2014 年接任 CEO 后，将公司战略重心从 Windows 转向"移动优先、云优先"（Mobile First, Cloud First），
+                后来进一步演变为"智能云与智能边缘"战略。在他的领导下，微软的市值从约 3,000 亿美元增长到超过 3 万亿美元，
+                成为全球市值最高的公司之一。
+            </p>
+
+            <h3 id="m-ai">人工智能</h3>
+            <p>
+                微软在人工智能领域进行了大量投资，尤其是与 <strong>OpenAI</strong> 的深度战略合作。
+                自 2019 年起，微软累计向 OpenAI 投资超过 130 亿美元，获得了 OpenAI 技术的独家云服务提供商地位
+                以及商业授权。微软将 OpenAI 的技术整合到多个产品中：
+            </p>
+            <ul style="margin:8px 0 12px 24px;">
+                <li><strong>Copilot</strong> — 集成在 Windows、Microsoft 365、Edge 浏览器等产品中的 AI 助手</li>
+                <li><strong>Bing Chat / Copilot</strong> — 基于 GPT-4 的新一代搜索引擎对话功能</li>
+                <li><strong>GitHub Copilot</strong> — 基于 AI 的代码辅助编程工具</li>
+                <li><strong>Azure OpenAI Service</strong> — 在 Azure 云平台上提供 OpenAI 模型的 API 服务</li>
+            </ul>
+
+            <h3 id="m-gaming">游戏与 Xbox</h3>
+            <p>
+                微软于 2001 年推出了 Xbox 游戏主机，正式进入游戏行业。此后陆续推出了 Xbox 360、Xbox One 和 Xbox Series X/S 等主机。
+                2020 年，微软以 75 亿美元收购了游戏开发商 <strong>ZeniMax Media</strong>（《上古卷轴》《辐射》系列的母公司），
+                2023 年又以 687 亿美元完成了对 <strong>动视暴雪</strong>（Activision Blizzard）的收购，
+                这是游戏行业历史上最大的收购交易，使微软成为全球第三大游戏公司。
+            </p>
+
+            <h3 id="m-impact">行业影响</h3>
+            <p>
+                微软对科技行业和整个现代社会的影响不可估量。它让个人电脑走入了千家万户，Windows + Office 的组合
+                定义了全球数十亿人的数字工作方式。微软的故事也是硅谷创业精神的经典案例：
+                从一间阿尔伯克基的车库到市值超过 3 万亿美元的全球科技巨头。
+            </p>
+
+            <div class="catlinks">
+                <strong>分类：</strong>
+                <a href="#">跨国公司</a>
+                <a href="#">操作系统</a>
+                <a href="#">云计算</a>
+                <a href="#">人工智能</a>
+                <a href="#">软件</a>
+                <a href="#">1975年成立</a>
+                <a href="#">华盛顿州</a>
+            </div>
+        </div>
+
+        <!-- ===== APPLE ===== -->
+        <div class="article-card" id="page-apple">
+            <div class="breadcrumb">
+                <a href="javascript:navigateTo('home')">TechPedia</a> &gt;
+                <a href="javascript:navigateTo('home')">公司</a> &gt;
+                <span>Apple</span>
+            </div>
+
+            <h2>Apple（苹果公司）</h2>
+
+            <table class="infobox">
+                <tr><td colspan="2" class="infobox-title">Apple Inc.</td></tr>
+                <tr><td colspan="2" class="infobox-header">
+                    <div class="company-logo-placeholder" style="background:linear-gradient(135deg,#555,#222);color:#fff;font-size:48px;">🍎</div>
+                </td></tr>
+                <tr><td>公司类型</td><td>上市公司</td></tr>
+                <tr><td>成立日期</td><td>1976年4月1日</td></tr>
+                <tr><td>创始人</td><td>史蒂夫·乔布斯、史蒂夫·沃兹尼亚克、罗纳德·韦恩</td></tr>
+                <tr><td>总部</td><td>美国加利福尼亚州 库比蒂诺</td></tr>
+                <tr><td>CEO</td><td>蒂姆·库克（Tim Cook）</td></tr>
+                <tr><td>关键人物</td><td>史蒂夫·乔布斯、蒂姆·库克</td></tr>
+                <tr><td>营业额</td><td>约 3,833 亿美元（2023财年）</td></tr>
+                <tr><td>员工数</td><td>约 164,000 人（2024年）</td></tr>
+                <tr><td>股票代码</td><td>AAPL（NASDAQ）</td></tr>
+                <tr><td>网站</td><td><a href="https://www.apple.com" target="_blank">apple.com</a></td></tr>
+            </table>
+
+            <p>
+                <strong>Apple</strong>（中文名：<strong>苹果公司</strong>，中国大陆亦称"苹果"）是一家总部位于美国加利福尼亚州
+                库比蒂诺的跨国科技公司，由<strong>史蒂夫·乔布斯</strong>（Steve Jobs）、<strong>史蒂夫·沃兹尼亚克</strong>
+                （Steve Wozniak）和<strong>罗纳德·韦恩</strong>（Ronald Wayne）于 1976 年创立。
+                Apple 被认为是全球最具影响力的科技公司之一，以设计和销售消费电子产品、计算机软件和在线服务而闻名。
+            </p>
+
+            <div class="toc-box">
+                <div class="toc-title">📑 目录</div>
+                <ol>
+                    <li><a href="#a-history" onclick="scrollToSection('a-history')">历史</a></li>
+                    <li><a href="#a-products" onclick="scrollToSection('a-products')">核心产品</a></li>
+                    <li><a href="#a-ecosystem" onclick="scrollToSection('a-ecosystem')">生态系统</a></li>
+                    <li><a href="#a-chip" onclick="scrollToSection('a-chip')">自研芯片</a></li>
+                    <li><a href="#a-culture" onclick="scrollToSection('a-culture')">企业文化与设计哲学</a></li>
+                </ol>
+            </div>
+
+            <h3 id="a-history">历史</h3>
+            <p>
+                Apple 的故事始于 1976 年。史蒂夫·沃兹尼亚克在自家车库中手工组装了第一台 <strong>Apple I</strong> 电脑，
+                史蒂夫·乔布斯则负责商业运营。两人随后推出了更为成功的 <strong>Apple II</strong>（1977），
+                这是最早获得商业成功的个人电脑之一，特别在教育和家庭市场大受欢迎。
+            </p>
+            <p>
+                1984 年，Apple 推出了革命性的 <strong>Macintosh</strong>（麦金塔电脑），这是第一款搭载图形用户界面
+                和鼠标操作系统的商用个人电脑，标志着个人计算方式的根本性转变。
+                然而，由于高昂的定价和内部管理问题，乔布斯于 1985 年被迫离开自己创立的公司。
+            </p>
+            <p>
+                1997 年，在 Apple 濒临破产之际，乔布斯戏剧性地回归并担任 CEO。他大刀阔斧地精简产品线，
+                推出了一系列改变世界的产品：2001 年的 <strong>iPod</strong>（重新定义了音乐播放器）、
+                2003 年的 <strong>iTunes Store</strong>（改变了音乐分发方式）、
+                2007 年的 <strong>iPhone</strong>（开启了智能手机时代）以及 2010 年的 <strong>iPad</strong>（开创了平板电脑市场）。
+            </p>
+            <p>
+                2011 年 10 月 5 日，史蒂夫·乔布斯因胰腺癌去世，享年 56 岁。他的继任者<strong>蒂姆·库克</strong>
+                接任 CEO，带领 Apple 继续发展。2018 年 8 月，Apple 成为美国首家市值突破 1 万亿美元的上市公司。
+                2020 年，Apple 市值突破 2 万亿美元；2023 年，突破 3 万亿美元。截至 2024 年，
+                Apple 是全球市值最高的上市公司，市值一度超过 3.5 万亿美元。
+            </p>
+
+            <h3 id="a-products">核心产品</h3>
+            <ul style="margin:8px 0 12px 24px;">
+                <li><strong>iPhone</strong> — 全球最畅销的智能手机之一，自 2007 年发布以来已售出超过 23 亿部。iPhone 重新定义了智能手机的概念，引入了多点触控界面、App Store 等创新功能。</li>
+                <li><strong>Mac</strong> — Apple 的个人电脑产品线，包括 MacBook Air、MacBook Pro、iMac、Mac Mini、Mac Studio 和 Mac Pro。搭载 Apple 自研的 Apple Silicon 芯片。</li>
+                <li><strong>iPad</strong> — 全球最畅销的平板电脑系列，涵盖 iPad、iPad Air、iPad Pro 等多个型号。</li>
+                <li><strong>Apple Watch</strong> — 全球最畅销的智能手表，引领了可穿戴设备市场的增长。</li>
+                <li><strong>AirPods</strong> — Apple 的无线耳机产品系列，包括 AirPods、AirPods Pro 和 AirPods Max。</li>
+                <li><strong>Apple Vision Pro</strong> — Apple 于 2024 年推出的"空间计算"头戴式显示器，标志着 Apple 进入混合现实（MR）领域。</li>
+            </ul>
+
+            <h3 id="a-ecosystem">生态系统</h3>
+            <p>
+                Apple 最强大的竞争力之一是其深度整合的<strong>产品生态系统</strong>。Apple 设备之间通过 iCloud、AirDrop、
+                Handoff、通用控制（Universal Control）、随航（Sidecar）等功能无缝协作，
+                使用户一旦进入 Apple 生态系统就很难"叛逃"——这种现象被称为"<strong>苹果围墙花园</strong>"（Apple Walled Garden）。
+            </p>
+            <p>
+                Apple 还运营着庞大的在线服务业务，包括 <strong>App Store</strong>（全球最大的移动应用商店之一）、
+                <strong>Apple Music</strong>（音乐流媒体服务）、<strong>Apple TV+</strong>（视频流媒体服务）、
+                <strong>Apple Pay</strong>（移动支付服务）和 <strong>iCloud</strong>（云存储服务）等。
+                服务业务已成为 Apple 增长最快的部分，年收入已超过 850 亿美元。
+            </p>
+
+            <h3 id="a-chip">自研芯片</h3>
+            <p>
+                2020 年，Apple 宣布将 Mac 产品线从 Intel 处理器迁移至自研的 <strong>Apple Silicon</strong> 芯片。
+                首款芯片 <strong>M1</strong> 于 2020 年 11 月发布，凭借卓越的性能和能效比赢得了广泛赞誉。
+                此后，Apple 相继推出了 M1 Pro、M1 Max、M2、M2 Pro、M2 Max、M3、M3 Pro、M3 Max 和 M4 等多代芯片，
+                不断提升性能上限。Apple Silicon 的成功使 Apple 完全掌控了从硬件到软件的整条技术栈，
+                实现了软硬件的深度协同优化。
+            </p>
+
+            <h3 id="a-culture">企业文化与设计哲学</h3>
+            <p>
+                Apple 的设计哲学可以用三个词概括：<strong>简洁</strong>、<strong>直觉</strong>、<strong>优雅</strong>。
+                这一理念源自史蒂夫·乔布斯对产品设计的极致追求——他深信好的设计应该是"不需要说明书就能使用"的。
+                Apple 产品的外观设计、用户界面和包装体验都体现了这一理念。
+            </p>
+            <p>
+                Apple 的企业总部——<strong>Apple Park</strong>（苹果公园）于 2017 年投入使用，
+                是乔布斯生前亲自参与设计的最后一个重大项目。这座环形建筑被昵称为"太空船"，
+                被认为是全球最具标志性的企业总部之一。
+            </p>
+
+            <div class="catlinks">
+                <strong>分类：</strong>
+                <a href="#">跨国公司</a>
+                <a href="#">消费电子</a>
+                <a href="#">智能手机</a>
+                <a href="#">个人电脑</a>
+                <a href="#">半导体设计</a>
+                <a href="#">1976年成立</a>
+                <a href="#">加利福尼亚州</a>
+            </div>
+        </div>
+
+        <!-- ===== OPENAI ===== -->
+        <div class="article-card" id="page-openai">
+            <div class="breadcrumb">
+                <a href="javascript:navigateTo('home')">TechPedia</a> &gt;
+                <a href="javascript:navigateTo('home')">公司</a> &gt;
+                <span>OpenAI</span>
+            </div>
+
+            <h2>OpenAI</h2>
+
+            <table class="infobox">
+                <tr><td colspan="2" class="infobox-title">OpenAI</td></tr>
+                <tr><td colspan="2" class="infobox-header">
+                    <div class="company-logo-placeholder" style="background:linear-gradient(135deg,#10a37f,#1a7f64);color:#fff;font-family:sans-serif;font-size:28px;">OpenAI</div>
+                </td></tr>
+                <tr><td>公司类型</td><td>混合实体（营利+非营利）</td></tr>
+                <tr><td>成立日期</td><td>2015年12月11日</td></tr>
+                <tr><td>创始人</td><td>山姆·奥特曼、格雷格·布罗克曼、伊利亚·苏茨克维尔等</td></tr>
+                <tr><td>总部</td><td>美国加利福尼亚州 旧金山</td></tr>
+                <tr><td>CEO</td><td>山姆·奥特曼（Sam Altman）</td></tr>
+                <tr><td>关键人物</td><td>格雷格·布罗克曼、伊利亚·苏茨克维尔</td></tr>
+                <tr><td>估值</td><td>约 1,570 亿美元（2024年）</td></tr>
+                <tr><td>主要产品</td><td>ChatGPT、GPT 系列、DALL·E、Whisper</td></tr>
+                <tr><td>网站</td><td><a href="https://openai.com" target="_blank">openai.com</a></td></tr>
+            </table>
+
+            <p>
+                <strong>OpenAI</strong> 是一家总部位于美国旧金山的人工智能研究公司，成立于 2015 年 12 月。
+                公司的创立目标是推进<strong>通用人工智能</strong>（Artificial General Intelligence, AGI）的发展，
+                并确保 AGI 造福全人类。OpenAI 是当前全球最具影响力的人工智能公司之一，
+                其开发的 <strong>ChatGPT</strong> 是历史上增长最快的消费级应用程序。
+            </p>
+
+            <div class="toc-box">
+                <div class="toc-title">📑 目录</div>
+                <ol>
+                    <li><a href="#o-history" onclick="scrollToSection('o-history')">历史与创立</a></li>
+                    <li><a href="#o-products" onclick="scrollToSection('o-products')">核心产品</a></li>
+                    <li><a href="#o-models" onclick="scrollToSection('o-models')">GPT 模型系列</a></li>
+                    <li><a href="#o-safety" onclick="scrollToSection('o-safety')">AI 安全</a></li>
+                    <li><a href="#o-controversy" onclick="scrollToSection('o-controversy')">争议与挑战</a></li>
+                </ol>
+            </div>
+
+            <h3 id="o-history">历史与创立</h3>
+            <p>
+                OpenAI 最初于 2015 年 12 月以<strong>非营利组织</strong>的形式成立，由<strong>山姆·奥特曼</strong>（Sam Altman）、
+                <strong>格雷格·布罗克曼</strong>（Greg Brockman）、<strong>伊利亚·苏茨克维尔</strong>（Ilya Sutskever）、
+                <strong>埃隆·马斯克</strong>（Elon Musk）等人联合创立。创始团队承诺向该组织捐赠共计 10 亿美元。
+                值得注意的是，早期 OpenAI 的核心研究团队成员大多来自 Google DeepMind 等顶级 AI 实验室。
+            </p>
+            <p>
+                2018 年，OpenAI 发布了 <strong>GPT</strong>（Generative Pre-trained Transformer）——一个基于 Transformer
+                架构的语言模型。2019 年 2 月，OpenAI 发布了 <strong>GPT-2</strong>，其生成的文本质量令人震惊，
+                以至于公司最初担心其被滥用而推迟发布完整模型。
+            </p>
+            <p>
+                2019 年，OpenAI 进行了重大组织结构调整，成立了<strong>"有限盈利"</strong>（Capped Profit）子公司
+                OpenAI LP，并从微软获得了 10 亿美元的初始投资。这一转型引发了社区关于其是否背离了非营利初衷的讨论。
+                2020 年 6 月，OpenAI 发布了 <strong>GPT-3</strong>，凭借其 1,750 亿参数的庞大规模，
+                成为了当时最强大的语言模型，在文本生成、翻译、编程等多种任务上展现了惊人的能力。
+            </p>
+            <p>
+                2022 年 11 月 30 日，OpenAI 发布了 <strong>ChatGPT</strong>——一个基于 GPT-3.5 的对话式 AI 产品。
+                ChatGPT 在发布后五天内就获得了超过 100 万用户，两个月内用户数突破 1 亿，
+                成为历史上增长最快的消费级应用程序。ChatGPT 的成功彻底改变了全球对人工智能的认知，
+                引发了新一轮 AI 投资热潮和竞争浪潮。
+            </p>
+
+            <h3 id="o-products">核心产品</h3>
+            <ul style="margin:8px 0 12px 24px;">
+                <li><strong>ChatGPT</strong> — 基于 GPT 模型的对话式 AI 助手，支持自然语言对话、内容创作、代码编写、分析推理等多种功能。提供免费版和 ChatGPT Plus（付费订阅）版本。</li>
+                <li><strong>GPT API</strong> — 为开发者提供 GPT 模型的 API 接口，支持在各种应用程序中集成 AI 能力。</li>
+                <li><strong>DALL·E</strong> — AI 图像生成模型，可根据文字描述生成高质量图像。已更新至 DALL·E 3。</li>
+                <li><strong>Whisper</strong> — 开源的语音识别模型，支持多种语言的语音转文字功能。</li>
+                <li><strong>Sora</strong> — AI 视频生成模型，可根据文字描述生成高质量的视频片段，展示了 AI 在视频创作领域的巨大潜力。</li>
+                <li><strong>ChatGPT Plugins / GPTs</strong> — 允许第三方开发者和用户创建自定义的 ChatGPT 应用扩展。</li>
+                <li><strong>Canvas</strong> — ChatGPT 的协作写作和编程界面。</li>
+            </ul>
+
+            <h3 id="o-models">GPT 模型系列</h3>
+            <p>
+                OpenAI 的核心竞争力在于其不断进化的 GPT（Generative Pre-trained Transformer）模型系列：
+            </p>
+            <ul style="margin:8px 0 12px 24px;">
+                <li><strong>GPT</strong>（2018）— 首个版本，1.17 亿参数</li>
+                <li><strong>GPT-2</strong>（2019）— 15 亿参数，曾因担心被滥用而延迟发布</li>
+                <li><strong>GPT-3</strong>（2020）— 1,750 亿参数，在多个 NLP 任务上达到接近人类水平</li>
+                <li><strong>GPT-3.5</strong>（2022）— ChatGPT 的底层模型，引入了 RLHF（基于人类反馈的强化学习）对齐技术</li>
+                <li><strong>GPT-4</strong>（2023年3月）— 多模态大模型，支持图像和文本输入，在众多专业考试中达到或超过人类水平</li>
+                <li><strong>GPT-4o</strong>（2024年5月）— "omni"版本，支持文本、音频和图像的实时多模态交互</li>
+                <li><strong>o1</strong>（2024年9月）— 具有深度推理能力的新系列模型，擅长数学、编程和科学推理</li>
+                <li><strong>GPT-4.5</strong>（2025年2月）— 扩展预训练版本，拥有更广的知识面</li>
+                <li><strong>GPT-5</strong>（2025年）— 融合了传统语言模型与推理模型的统一架构</li>
+            </ul>
+
+            <h3 id="o-safety">AI 安全</h3>
+            <p>
+                OpenAI 将 <strong>AI 安全</strong>作为其核心使命之一。公司在 AI 对齐（Alignment）研究方面投入了大量资源，
+                致力于确保 AI 系统的行为与人类价值观和意图保持一致。OpenAI 在对齐研究方面的重要贡献包括：
+            </p>
+            <ul style="margin:8px 0 12px 24px;">
+                <li><strong>RLHF</strong>（基于人类反馈的强化学习）— 通过人类反馈来训练模型生成更有帮助、更安全的回答</li>
+                <li><strong>Constitutional AI</strong>— 通过预定义的"宪法"原则来指导模型行为</li>
+                <li><strong>红队测试</strong>— 系统性地测试模型的安全漏洞和潜在风险</li>
+                <li>OpenAI 承诺在开发 AGI 之前确保其安全性，并制定了分阶段部署策略</li>
+            </ul>
+
+            <h3 id="o-controversy">争议与挑战</h3>
+            <p>
+                OpenAI 在快速发展的同时也面临着不少争议和挑战：
+            </p>
+            <p>
+                <strong>非营利承诺争议：</strong>从非营利组织转变为"有限盈利"公司的决定引发了广泛讨论。
+                2024 年 10 月，OpenAI 完成了新一轮融资，估值达到 1,570 亿美元，进一步巩固了其作为全球最有价值 AI 初创公司的地位，
+                但同时也引发了关于其治理结构和使命承诺的更多质疑。
+            </p>
+            <p>
+                <strong>2023 年领导层危机：</strong>2023 年 11 月，OpenAI 董事会突然解除了山姆·奥特曼的 CEO 职务，
+                引发了一场持续数天的企业危机。在员工、投资者和微软等各方的巨大压力下，奥特曼最终复职，
+                并对董事会进行了重组。这一事件暴露了 OpenAI 治理结构中的深层问题。
+            </p>
+            <p>
+                <strong>版权与数据隐私：</strong>OpenAI 面临多起由作家、媒体公司和艺术家提起的版权诉讼，
+                指控其在训练 AI 模型时未经授权使用了受版权保护的内容。此外，ChatGPT 对用户数据的使用方式也引发了
+                隐私保护方面的关注，多国监管机构对此展开了调查。
+            </p>
+
+            <div class="catlinks">
+                <strong>分类：</strong>
+                <a href="#">人工智能</a>
+                <a href="#">大语言模型</a>
+                <a href="#">初创公司</a>
+                <a href="#">旧金山</a>
+                <a href="#">2015年成立</a>
+                <a href="#">AI 安全</a>
+            </div>
+        </div>
+
+        <!-- ===== SEARCH RESULTS ===== -->
+        <div class="article-card" id="page-search">
+            <h2 id="searchTitle">搜索结果</h2>
+            <div id="searchResults"></div>
+        </div>
+
+    </main>
+</div>
+
+<!-- ===== Footer ===== -->
+<footer class="site-footer">
+    <p>TechPedia — 科技百科全书 | 本站内容仅供学习参考，信息可能不完全准确或最新</p>
+    <p style="margin-top:4px;">基于 HTML5 构建 · 仿 Wikipedia 风格 · 2025</p>
+</footer>
+
+<script>
+// ===== Page Data for Search =====
+const pages = {
+    google: {
+        title: 'Google（谷歌）',
+        keywords: 'google 谷歌 搜索引擎 拉里·佩奇 谢尔盖·布林 Alphabet 人工智能 AlphaGo Gemini YouTube Android Chrome 云计算 PageRank',
+        summary: '全球最大的搜索引擎公司，Alphabet 旗下子公司，以搜索引擎、云计算、人工智能等业务闻名。',
+        el: 'page-google'
+    },
+    microsoft: {
+        title: 'Microsoft（微软）',
+        keywords: 'microsoft 微软 比尔·盖茨 保罗·艾伦 Windows Office Azure 云计算 Xbox Copilot OpenAI 萨提亚·纳德拉',
+        summary: '全球最大的软件公司之一，以 Windows 操作系统、Office 办公套件和 Azure 云计算平台著称。',
+        el: 'page-microsoft'
+    },
+    apple: {
+        title: 'Apple（苹果公司）',
+        keywords: 'apple 苹果 ipod iphone mac ipad 史蒂夫·乔布斯 蒂姆·库克 Apple Silicon M1 M2 M3 芯片 生态系统 Apple Watch AirPods',
+        summary: '全球市值最高的科技公司之一，以 iPhone、Mac、iPad 等创新硬件产品和生态系统闻名。',
+        el: 'page-apple'
+    },
+    openai: {
+        title: 'OpenAI',
+        keywords: 'openai chatgpt gpt gpt-3 gpt-4 山姆·奥特曼 sam altman 人工智能 AGI 大语言模型 dall-e whisper sora 对齐 AI安全',
+        summary: '领先的人工智能研究公司，ChatGPT 和 GPT 系列模型的开发者，致力于通用人工智能研究。',
+        el: 'page-openai'
+    }
+};
+
+// ===== Navigation =====
+function navigateTo(page) {
+    // Hide all pages
+    document.querySelectorAll('.article-card').forEach(c => c.classList.remove('active'));
+    // Deactivate all tabs
+    document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+
+    if (page === 'home') {
+        document.getElementById('page-home').classList.add('active');
+        document.getElementById('tab-main').classList.add('active');
+        updateSidebar('home');
+        history.pushState(null, '', '#home');
+    } else if (pages[page]) {
+        document.getElementById(pages[page].el).classList.add('active');
+        document.getElementById('tab-' + page).classList.add('active');
+        updateSidebar(page);
+        history.pushState(null, '', '#' + page);
+    }
+    window.scrollTo(0, 0);
+}
+
+function updateSidebar(active) {
+    document.querySelectorAll('#sidebarTOC a').forEach(a => a.classList.remove('active-link'));
+    const items = document.querySelectorAll('#sidebarTOC a');
+    const map = { home: 0, google: 1, microsoft: 2, apple: 3, openai: 4 };
+    if (map[active] !== undefined && items[map[active]]) {
+        items[map[active]].classList.add('active-link');
+    }
+}
+
+function scrollToSection(id) {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ===== Search =====
+function doSearch() {
+    const query = document.getElementById('searchInput').value.trim().toLowerCase();
+    if (!query) { navigateTo('home'); return; }
+
+    let results = [];
+    for (const [key, page] of Object.entries(pages)) {
+        const searchText = (page.title + ' ' + page.keywords + ' ' + page.summary).toLowerCase();
+        if (searchText.includes(query)) {
+            // Calculate relevance
+            let score = 0;
+            if (page.title.toLowerCase().includes(query)) score += 10;
+            if (page.keywords.toLowerCase().includes(query)) score += 5;
+            if (page.summary.toLowerCase().includes(query)) score += 3;
+            results.push({ key, page, score });
+        }
+    }
+    results.sort((a, b) => b.score - a.score);
+
+    // Show results
+    document.querySelectorAll('.article-card').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+
+    const searchPage = document.getElementById('page-search');
+    const searchTitle = document.getElementById('searchTitle');
+    const searchResults = document.getElementById('searchResults');
+
+    searchTitle.textContent = `"${query}" 的搜索结果 — ${results.length} 条`;
+    searchResults.innerHTML = '';
+
+    if (results.length === 0) {
+        searchResults.innerHTML = `<p style="color:#54595d;padding:20px 0;">未找到与 "<strong>${query}</strong>" 相关的结果。请尝试其他关键词。</p>`;
+    } else {
+        results.forEach(r => {
+            const div = document.createElement('div');
+            div.className = 'search-result-item';
+            div.innerHTML = `
+                <h4><a href="javascript:navigateTo('${r.key}')">${r.page.title}</a></h4>
+                <p>${r.page.summary}</p>
+                <p><span class="tag">${r.page.keywords.split(' ').slice(0, 5).join('</span> <span class="tag">')}</span></p>
+            `;
+            searchResults.appendChild(div);
+        });
+    }
+
+    searchPage.classList.add('active');
+    history.pushState(null, '', '#search=' + encodeURIComponent(query));
+}
+
+// ===== Hash-based routing =====
+function handleHash() {
+    const hash = location.hash.slice(1);
+    if (hash.startsWith('search=')) {
+        document.getElementById('searchInput').value = decodeURIComponent(hash.slice(7));
+        doSearch();
+    } else if (pages[hash]) {
+        navigateTo(hash);
+    } else {
+        navigateTo('home');
+    }
+}
+
+window.addEventListener('hashchange', handleHash);
+window.addEventListener('DOMContentLoaded', handleHash);
+</script>
+</body>
+</html>

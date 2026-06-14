@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import type { ModelConfig, SandEvalConfig } from "./types.js";
+import type { ModelConfig, SandEvalConfig, ScoringDimensionConfig } from "./types.js";
 
 const authSchema = z.object({
   type: z.enum(["none", "api-key", "command", "command-token"]).optional(),
@@ -19,9 +19,9 @@ const authSchema = z.object({
 
 const baseModelSchema = z.object({
   name: z.string().min(1),
-  model: z.string().min(1),
+  model: z.string().min(1).optional(),
   provider: z.string().optional(),
-  modelIds: z.array(z.string()).optional(),
+  modelIds: z.array(z.string().min(1)).optional(),
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().positive().optional(),
   description: z.string().optional(),
@@ -45,7 +45,8 @@ const commandModelSchema = baseModelSchema.extend({
   cwd: z.string().optional(),
   env: z.record(z.string(), z.string()).optional(),
   timeoutMs: z.number().positive().optional(),
-  protocol: z.enum(["sandeval-json", "plain-final"]).optional()
+  protocol: z.enum(["sandeval-json", "plain-final"]).optional(),
+  workflowAdapter: z.string().optional()
 });
 
 const customModelSchema = baseModelSchema.extend({
@@ -66,7 +67,7 @@ const configSchema = z.object({
   reportDir: z.string().optional(),
   sandbox: z
     .object({
-      mode: z.enum(["local", "docker", "podman", "bubblewrap", "firejail", "nsjail"]).optional(),
+      mode: z.enum(["local", "docker", "podman", "bubblewrap", "firejail", "nsjail", "external"]).optional(),
       root: z.string().optional(),
       dockerImage: z.string().optional(),
       dockerRuntime: z.string().optional(),
@@ -76,8 +77,45 @@ const configSchema = z.object({
       network: z.boolean().optional(),
       env: z.record(z.string(), z.string()).optional(),
       sandboxExtraArgs: z.array(z.string()).optional(),
+      external: z
+        .object({
+          command: z.string().min(1),
+          args: z.array(z.string()).optional(),
+          cwd: z.string().optional(),
+          env: z.record(z.string(), z.string()).optional(),
+          timeoutMs: z.number().positive().optional()
+        })
+        .optional(),
       preserveRuns: z.number().int().positive().optional(),
       copyTaskFiles: z.boolean().optional()
+    })
+    .optional(),
+  tools: z
+    .object({
+      files: z.boolean().optional(),
+      shell: z.boolean().optional(),
+      git: z.enum(["off", "read", "full"]).optional(),
+      gitRemote: z.boolean().optional(),
+      packageManager: z.boolean().optional(),
+      maxCommandTimeoutMs: z.number().positive().optional(),
+      blockedCommands: z.array(z.string()).optional(),
+      allowedHosts: z.array(z.string()).optional()
+    })
+    .optional(),
+  rules: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        prompt: z.string().min(1),
+        enabled: z.boolean().optional()
+      })
+    )
+    .optional(),
+  skills: z
+    .object({
+      localDir: z.string().optional(),
+      globalDir: z.string().optional()
     })
     .optional(),
   agent: z
@@ -85,15 +123,42 @@ const configSchema = z.object({
       maxTurns: z.number().int().positive().optional(),
       systemPrompt: z.string().optional(),
       toolTimeoutMs: z.number().positive().optional(),
-      autoRunVerification: z.boolean().optional()
+      autoRunVerification: z.boolean().optional(),
+      planMode: z.enum(["off", "prompt", "enforced"]).optional(),
+      planApproval: z.enum(["auto", "interactive"]).optional()
     })
     .optional(),
   scoring: z
     .object({
       enabled: z.boolean().optional(),
+      mode: z.enum(["single", "multi"]).optional(),
       rubric: z.string().optional(),
+      maxRetries: z.number().int().nonnegative().optional(),
       minScore: z.number().optional(),
-      maxScore: z.number().optional()
+      maxScore: z.number().optional(),
+      dimensions: z
+        .array(
+          z.object({
+            key: z.string().min(1),
+            label: z.string().optional(),
+            description: z.string().optional(),
+            weight: z.number().nonnegative().optional()
+          })
+        )
+        .optional()
+    })
+    .optional(),
+  arena: z
+    .object({
+      concurrency: z.number().int().positive().optional()
+    })
+    .optional(),
+  workflow: z
+    .object({
+      compact: z.boolean().optional(),
+      collapseSimilar: z.boolean().optional(),
+      maxLiveEvents: z.number().int().positive().optional(),
+      maxWorkflowEvents: z.number().int().positive().optional()
     })
     .optional(),
   storage: z
@@ -181,15 +246,65 @@ export function createDefaultConfig(): SandEvalConfig {
       preserveRuns: 50,
       copyTaskFiles: false
     },
+    tools: {
+      files: true,
+      shell: true,
+      git: "full",
+      gitRemote: false,
+      packageManager: true,
+      maxCommandTimeoutMs: 120000,
+      blockedCommands: ["shutdown", "reboot"]
+    },
+    rules: [
+      {
+        name: "verify-before-finish",
+        description: "Require relevant verification before finishing.",
+        enabled: true,
+        prompt:
+          "Before finishing, run the most relevant verification command when the task produced runnable code or artifacts. If verification is not possible, explain why in the finish summary."
+      },
+      {
+        name: "prefer-small-runnable-artifacts",
+        description: "Prefer compact, complete runnable artifacts.",
+        enabled: true,
+        prompt:
+          "Prefer small, complete, runnable artifacts. Avoid unnecessary dependencies and broad rewrites unless the task clearly requires them."
+      },
+      {
+        name: "report-changed-files",
+        description: "Summarize important changed files and commands.",
+        enabled: true,
+        prompt:
+          "When finishing, summarize the important files changed and the verification commands that were run."
+      }
+    ],
+    skills: {
+      localDir: ".sandeval/skills",
+      globalDir: "~/.sandeval/skills"
+    },
     agent: {
       maxTurns: 12,
       toolTimeoutMs: 120000,
-      autoRunVerification: true
+      autoRunVerification: true,
+      planMode: "prompt",
+      planApproval: "auto"
     },
     scoring: {
       enabled: true,
+      mode: "multi",
+      maxRetries: 2,
       minScore: 0,
-      maxScore: 100
+      maxScore: 100,
+      dimensions: defaultScoringDimensions()
+    },
+    arena: {
+      concurrency: 1
+    },
+    workflow: {
+      compact: true,
+      collapseSimilar: true,
+      maxLiveEvents: 40,
+      maxWorkflowEvents: 200
     },
     storage: {
       kind: "filesystem",
@@ -263,6 +378,28 @@ export function createDefaultConfig(): SandEvalConfig {
         }
       },
       {
+        name: "ollama",
+        provider: "ollama",
+        kind: "openai-compatible",
+        baseUrl: "http://localhost:11434/v1",
+        apiKey: "ollama",
+        model: "qwen2.5-coder:latest",
+        modelIds: ["qwen2.5-coder:latest", "llama3.1:latest", "mistral:latest"],
+        temperature: 0.2,
+        enabled: false
+      },
+      {
+        name: "lmstudio",
+        provider: "lmstudio",
+        kind: "openai-compatible",
+        baseUrl: "http://localhost:1234/v1",
+        apiKey: "lm-studio",
+        model: "local-model",
+        modelIds: ["local-model"],
+        temperature: 0.2,
+        enabled: false
+      },
+      {
         name: "claude-code",
         provider: "claude-code",
         kind: "command",
@@ -271,6 +408,7 @@ export function createDefaultConfig(): SandEvalConfig {
         command: "claude",
         args: ["-p", "{{task}}", "--output-format", "json"],
         protocol: "plain-final",
+        workflowAdapter: "claude-code",
         timeoutMs: 600000,
         auth: {
           type: "command",
@@ -289,6 +427,7 @@ export function createDefaultConfig(): SandEvalConfig {
         command: "codex",
         args: ["exec", "--json", "{{task}}"],
         protocol: "plain-final",
+        workflowAdapter: "codex",
         timeoutMs: 600000,
         auth: {
           type: "command",
@@ -305,6 +444,22 @@ export function createDefaultConfig(): SandEvalConfig {
 function withDefaults(config: SandEvalConfig): SandEvalConfig {
   return {
     ...config,
+    tools: {
+      files: true,
+      shell: true,
+      git: "full",
+      gitRemote: false,
+      packageManager: true,
+      maxCommandTimeoutMs: config.sandbox?.commandTimeoutMs ?? 120000,
+      blockedCommands: ["shutdown", "reboot"],
+      ...config.tools
+    },
+    rules: config.rules ?? createDefaultRules(),
+    skills: {
+      localDir: ".sandeval/skills",
+      globalDir: "~/.sandeval/skills",
+      ...config.skills
+    },
     contexts: config.contexts?.length
       ? config.contexts
       : [
@@ -318,6 +473,32 @@ function withDefaults(config: SandEvalConfig): SandEvalConfig {
           }
         ]
   };
+}
+
+function createDefaultRules(): NonNullable<SandEvalConfig["rules"]> {
+  return [
+    {
+      name: "verify-before-finish",
+      description: "Require relevant verification before finishing.",
+      enabled: true,
+      prompt:
+        "Before finishing, run the most relevant verification command when the task produced runnable code or artifacts. If verification is not possible, explain why in the finish summary."
+    },
+    {
+      name: "prefer-small-runnable-artifacts",
+      description: "Prefer compact, complete runnable artifacts.",
+      enabled: true,
+      prompt:
+        "Prefer small, complete, runnable artifacts. Avoid unnecessary dependencies and broad rewrites unless the task clearly requires them."
+    },
+    {
+      name: "report-changed-files",
+      description: "Summarize important changed files and commands.",
+      enabled: true,
+      prompt:
+        "When finishing, summarize the important files changed and the verification commands that were run."
+    }
+  ];
 }
 
 export function findModel(config: SandEvalConfig, name?: string): ModelConfig {
@@ -338,15 +519,60 @@ export function listModelNames(config: SandEvalConfig): string[] {
   return listModelRefs(config);
 }
 
+export function defaultScoringDimensions(): ScoringDimensionConfig[] {
+  return [
+    {
+      key: "taskSatisfaction",
+      label: "Task",
+      weight: 30,
+      description: "How completely the output satisfies the task."
+    },
+    {
+      key: "correctness",
+      label: "Correctness",
+      weight: 25,
+      description: "Whether the solution is logically and functionally correct."
+    },
+    {
+      key: "runnability",
+      label: "Runnable",
+      weight: 15,
+      description: "Whether the artifact can run and was meaningfully verified."
+    },
+    {
+      key: "codeQuality",
+      label: "Quality",
+      weight: 15,
+      description: "Maintainability, clarity, and fit of the implementation or artifact."
+    },
+    {
+      key: "workflowQuality",
+      label: "Workflow",
+      weight: 10,
+      description: "Quality of planning, tool use, iteration, and evidence."
+    },
+    {
+      key: "userFeedbackImpact",
+      label: "Feedback",
+      weight: 5,
+      description: "How well explicit user feedback was incorporated."
+    }
+  ];
+}
+
 export function listModelRefs(config: SandEvalConfig): string[] {
-  return config.models.flatMap((model) => {
+  const refs = config.models.flatMap((model) => {
     const provider = model.provider ?? model.name;
-    const ids = model.modelIds?.length ? model.modelIds : [model.model];
+    const ids = model.modelIds?.length ? model.modelIds : model.model ? [model.model] : [];
     return ids.map((id) => `${provider}/${id}`);
   });
+  return [...new Set(refs)];
 }
 
 export function formatModelRef(model: ModelConfig): string {
+  if (!model.model) {
+    return model.name;
+  }
   return `${model.provider ?? model.name}/${model.model}`;
 }
 
@@ -362,15 +588,16 @@ function resolveModelRef(config: SandEvalConfig, value: string): ModelConfig | u
   }
   const provider = value.slice(0, slash);
   const modelId = value.slice(slash + 1);
-  const base = config.models.find((candidate) => (candidate.provider ?? candidate.name) === provider);
-  if (!base) {
-    return undefined;
-  }
-  if (base.modelIds?.length) {
-    if (!base.modelIds.includes(modelId)) {
-      return undefined;
+  const base = config.models.find((candidate) => {
+    if ((candidate.provider ?? candidate.name) !== provider) {
+      return false;
     }
-  } else if (base.model !== modelId) {
+    if (candidate.modelIds?.length) {
+      return candidate.modelIds.includes(modelId);
+    }
+    return !candidate.model || candidate.model === modelId;
+  });
+  if (!base) {
     return undefined;
   }
   return {

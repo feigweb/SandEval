@@ -1,5 +1,5 @@
 import type { ChatMessage, HttpModelConfig, ModelChatRequest, ModelProvider, ModelResponse, ToolCall } from "../types.js";
-import { fetchJson, getApiKey, joinUrl, normalizeToolCall, normalizeUsage } from "./base.js";
+import { fetchJson, getApiKey, joinUrl, normalizeToolCall, normalizeUsage, requireModelId } from "./base.js";
 
 export class AnthropicCompatibleProvider implements ModelProvider {
   readonly name: string;
@@ -15,7 +15,7 @@ export class AnthropicCompatibleProvider implements ModelProvider {
       .join("\n\n");
 
     const body = {
-      model: this.config.model,
+      model: requireModelId(this.config),
       system: system || undefined,
       messages: toAnthropicMessages(request.messages.filter((message) => message.role !== "system")),
       tools: request.tools?.map((tool) => ({

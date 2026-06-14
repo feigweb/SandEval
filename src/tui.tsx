@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, render, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import Spinner from "ink-spinner";
@@ -11,15 +11,19 @@ import { createProvider } from "./providers/index.js";
 import { saveArenaReport, saveRunReport } from "./report.js";
 import { runTask } from "./runner.js";
 import { scoreRun } from "./scorer.js";
+import { activeRules, summarizeRules } from "./rules.js";
+import { extractSkillMentions, listSkills } from "./skills.js";
 import { createStorage } from "./storage.js";
-import type { ArenaReport, RunEvent, RunReport, SandEvalConfig, StoredRunSummary } from "./types.js";
+import type { ArenaReport, RunEvent, RunPlan, RunReport, SandEvalConfig, StoredRunSummary, WorkflowEvent } from "./types.js";
 import { stringifyError, truncate } from "./utils.js";
 
-type Screen = "home" | "run" | "arena" | "config" | "history" | "login" | "result" | "error";
+type Screen = "run" | "config" | "history" | "login" | "result" | "workflow" | "planApproval" | "error";
 type RunMode = "single" | "arena";
+type PaletteView = "commands" | "runMode" | "model" | "arenaModels" | "contexts" | "skills" | "rules" | "sandboxMode" | "login";
 
 interface AppState {
   screen: Screen;
+  runMode: RunMode;
   selectedModel: string;
   selectedModels: string[];
   selectedContexts: string[];
@@ -34,15 +38,9 @@ interface AppState {
   history: StoredRunSummary[];
   eventLog: RunEvent[];
   reviewDraft: string;
+  pendingPlan?: RunPlan;
+  planFeedback: string;
 }
-
-const HOME_ITEMS: Array<{ label: string; screen: Screen }> = [
-  { label: "Run single model", screen: "run" },
-  { label: "Arena comparison", screen: "arena" },
-  { label: "Login / auth", screen: "login" },
-  { label: "Config", screen: "config" },
-  { label: "History", screen: "history" }
-];
 
 export async function runTui(cwd: string, configPath?: string): Promise<void> {
   if (!process.stdin.isTTY) {
@@ -58,8 +56,12 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
   const [config, setConfig] = useState(props.initialConfig);
   const models = useMemo(() => listModelNames(config), [config]);
   const contexts = useMemo(() => listContextNames(config), [config]);
+  const [skillNames, setSkillNames] = useState<string[]>([]);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteView, setPaletteView] = useState<PaletteView>("commands");
   const [state, setState] = useState<AppState>({
-    screen: "home",
+    screen: "run",
+    runMode: "single",
     selectedModel: models.includes(config.defaultModel ?? "") ? config.defaultModel ?? models[0] ?? "mock/mock-agent" : models[0] ?? "mock/mock-agent",
     selectedModels: config.defaultModel && models.includes(config.defaultModel) ? [config.defaultModel] : models.slice(0, 1),
     selectedContexts: [],
@@ -70,8 +72,10 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
     status: "Ready",
     history: [],
     eventLog: [],
-    reviewDraft: ""
+    reviewDraft: "",
+    planFeedback: ""
   });
+  const planResolver = useRef<((plan: RunPlan) => void) | undefined>(undefined);
 
   const theme = config.ui?.theme ?? "sand";
   const colors = {
@@ -81,23 +85,34 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
     danger: theme === "mono" ? "white" : "red"
   } as const;
 
-  const go = (screen: Screen) => setState((current) => ({ ...current, screen, error: undefined, status: screen === "home" ? "Ready" : current.status }));
+  useEffect(() => {
+    void listSkills(config, props.cwd)
+      .then((skills) => setSkillNames(skills.map((skill) => skill.name)))
+      .catch((error) => setState((current) => ({ ...current, status: `Skill load failed: ${stringifyError(error)}` })));
+  }, [config, props.cwd]);
+
+  const go = (screen: Screen) => setState((current) => ({ ...current, screen, error: undefined, status: screen === "run" ? "Ready" : current.status }));
   const back = () => {
     if (state.busy) {
       return;
     }
-    if (state.screen === "home") {
+    if (state.screen === "run") {
       exit();
       return;
     }
-    go("home");
+    go("run");
   };
 
   useInput((input, key) => {
     if (state.busy) {
       return;
     }
-    if (state.screen === "run" || state.screen === "arena" || state.screen === "result") {
+    if ((key as { ctrl?: boolean }).ctrl && input.toLowerCase() === "k") {
+      setPaletteView("commands");
+      setPaletteOpen(true);
+      return;
+    }
+    if (paletteOpen || state.screen === "run" || state.screen === "result") {
       return;
     }
     if (input === "q") {
@@ -117,6 +132,28 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
     }
   }
 
+  async function openHistoryItem(item: StoredRunSummary) {
+    setState((current) => ({ ...current, busy: true, status: `Opening ${item.id}` }));
+    try {
+      const storage = await createStorage(config, props.cwd);
+      const report = await storage.loadReport?.(item);
+      if (!report) {
+        throw new Error(item.reportPath ? `Report file not found: ${item.reportPath}` : `History item ${item.id} has no report path.`);
+      }
+      setState((current) => ({
+        ...current,
+        busy: false,
+        result: report,
+        resultMode: "results" in report ? "arena" : "single",
+        screen: "result",
+        eventLog: [],
+        status: `Opened history: ${item.id}`
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, busy: false, error: stringifyError(error), screen: "error" }));
+    }
+  }
+
   async function persistConfig(next: SandEvalConfig) {
     const savedPath = await saveConfig(next, props.cwd, props.configPath);
     setConfig({ ...next });
@@ -126,9 +163,37 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
   function appendRunEvent(event: RunEvent) {
     setState((current) => ({
       ...current,
-      eventLog: [...current.eventLog, event].slice(-80),
+      eventLog: [...current.eventLog, event].slice(-(config.workflow?.maxWorkflowEvents ?? 200)),
       status: event.message
     }));
+  }
+
+  async function approvePlanInTui(plan: RunPlan): Promise<RunPlan> {
+    return new Promise((resolve) => {
+      planResolver.current = resolve;
+      setState((current) => ({
+        ...current,
+        busy: false,
+        screen: "planApproval",
+        pendingPlan: plan,
+        planFeedback: "",
+        status: "Plan awaiting approval"
+      }));
+    });
+  }
+
+  function resolvePendingPlan(next: RunPlan) {
+    const resolve = planResolver.current;
+    planResolver.current = undefined;
+    setState((current) => ({
+      ...current,
+      busy: true,
+      screen: "run",
+      pendingPlan: undefined,
+      planFeedback: "",
+      status: next.approved ? "Plan approved, continuing run" : "Revising plan"
+    }));
+    resolve?.(next);
   }
 
   async function runSingle() {
@@ -148,9 +213,10 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
         cwd: props.cwd,
         prompt: state.prompt,
         modelName: state.selectedModel,
-        score: false,
+        score: state.score,
         onEvent: appendRunEvent,
-        contextNames: state.selectedContexts
+        contextNames: state.selectedContexts,
+        onPlanApproval: approvePlanInTui
       });
       const paths = await saveRunReport(report, resolveReportDir(config, props.cwd));
       report.reportPaths = paths;
@@ -189,9 +255,10 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
         cwd: props.cwd,
         prompt: state.prompt,
         models: state.selectedModels,
-        score: false,
+        score: state.score,
         onEvent: appendRunEvent,
-        contextNames: state.selectedContexts
+        contextNames: state.selectedContexts,
+        onPlanApproval: approvePlanInTui
       });
       const paths = await saveArenaReport(report, resolveReportDir(config, props.cwd));
       report.reportPaths = paths;
@@ -275,6 +342,7 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
           run: report.run,
           provider: judgeProvider,
           modelConfig: judgeConfig,
+          config,
           userReview: report.userReview
         });
         appendRunEvent({
@@ -313,9 +381,36 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
     }
   }
 
+  const runCurrent = () => {
+    if (state.runMode === "arena") {
+      void runArenaFlow();
+    } else {
+      void runSingle();
+    }
+  };
+
   let body: React.ReactNode;
-  if (state.screen === "home") {
-    body = <Home colors={colors} onSelect={go} />;
+  if (paletteOpen) {
+    body = (
+      <CommandPalette
+        colors={colors}
+        view={paletteView}
+        setView={setPaletteView}
+        state={state}
+        config={config}
+        models={models}
+        contexts={contexts}
+        skillNames={skillNames}
+        onClose={() => setPaletteOpen(false)}
+        onRun={runCurrent}
+        onGo={go}
+        onSetState={setState}
+        onSaveConfig={persistConfig}
+        onLogin={loginSelected}
+        onPackage={packageCurrentArtifacts}
+        onScore={() => scoreCurrentResult(state.reviewDraft)}
+      />
+    );
   } else if (state.screen === "run") {
     body = (
       <RunScreen
@@ -325,27 +420,14 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
         cwd={props.cwd}
         state={state}
         setState={setState}
-        onRun={runSingle}
-        onBack={back}
-      />
-    );
-  } else if (state.screen === "arena") {
-    body = (
-      <ArenaScreen
-        colors={colors}
-        models={models}
-        contexts={contexts}
-        cwd={props.cwd}
-        state={state}
-        setState={setState}
-        onRun={runArenaFlow}
+        onRun={runCurrent}
         onBack={back}
       />
     );
   } else if (state.screen === "config") {
     body = <ConfigScreen colors={colors} config={config} models={models} onSave={persistConfig} onBack={back} />;
   } else if (state.screen === "history") {
-    body = <HistoryScreen colors={colors} history={state.history} onRefresh={refreshHistory} />;
+    body = <HistoryScreen colors={colors} history={state.history} onRefresh={refreshHistory} onOpen={openHistoryItem} />;
   } else if (state.screen === "login") {
     body = <LoginScreen colors={colors} models={models} onLogin={loginSelected} />;
   } else if (state.screen === "result") {
@@ -358,7 +440,29 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
         setReviewDraft={(reviewDraft) => setState((current) => ({ ...current, reviewDraft }))}
         onPackage={packageCurrentArtifacts}
         onScore={scoreCurrentResult}
-        onBackHome={() => go("home")}
+        onBackHome={() => go("run")}
+      />
+    );
+  } else if (state.screen === "workflow") {
+    body = <WorkflowScreen colors={colors} result={state.result} events={state.eventLog} config={config} />;
+  } else if (state.screen === "planApproval") {
+    body = (
+      <PlanApprovalScreen
+        colors={colors}
+        plan={state.pendingPlan}
+        feedback={state.planFeedback}
+        setFeedback={(planFeedback) => setState((current) => ({ ...current, planFeedback }))}
+        onApprove={() => state.pendingPlan && resolvePendingPlan({ ...state.pendingPlan, approved: true, approvalMode: "interactive" })}
+        onRevise={() =>
+          state.pendingPlan &&
+          resolvePendingPlan({
+            ...state.pendingPlan,
+            approved: false,
+            approvalMode: "interactive",
+            revisions: [...state.pendingPlan.revisions, { feedback: state.planFeedback || "Revise the plan.", content: state.pendingPlan.content }]
+          })
+        }
+        onCancel={() => state.pendingPlan && resolvePendingPlan({ ...state.pendingPlan, approved: false, approvalMode: "interactive" })}
       />
     );
   } else {
@@ -369,13 +473,13 @@ function SandEvalTui(props: { cwd: string; configPath?: string; initialConfig: S
     <Box flexDirection="column" paddingX={1}>
       <Header colors={colors} cwd={props.cwd} configPath={getConfigPath(props.cwd, props.configPath)} />
       <Box borderStyle="round" borderColor={colors.accent} paddingX={1} paddingY={0} minHeight={18} flexDirection="column">
-        {state.busy ? (
-          <LiveRunPanel colors={colors} status={state.status} events={state.eventLog} />
+        {state.busy && state.screen !== "planApproval" ? (
+          <LiveRunPanel colors={colors} status={state.status} events={state.eventLog} config={config} />
         ) : (
           body
         )}
       </Box>
-      <Footer colors={colors} status={state.status} />
+      <Footer colors={colors} status={`${statusSummary(state, config)} · ${state.status}`} />
     </Box>
   );
 }
@@ -396,23 +500,241 @@ function Header(props: { colors: Colors; cwd: string; configPath: string }) {
 function Footer(props: { colors: Colors; status: string }) {
   return (
     <Box marginTop={1} justifyContent="space-between">
-      <Text color={props.colors.muted}>↑↓/j/k move · enter select · b/esc back · q quit · space toggle</Text>
+      <Text color={props.colors.muted}>Ctrl+K commands · Enter run · Esc back · q quit</Text>
       <Text color={props.colors.accent}>{props.status}</Text>
     </Box>
   );
 }
 
-function Home(props: { colors: Colors; onSelect: (screen: Screen) => void }) {
+function CommandPalette(props: {
+  colors: Colors;
+  view: PaletteView;
+  setView: (view: PaletteView) => void;
+  state: AppState;
+  config: SandEvalConfig;
+  models: string[];
+  contexts: string[];
+  skillNames: string[];
+  onClose: () => void;
+  onRun: () => void;
+  onGo: (screen: Screen) => void;
+  onSetState: React.Dispatch<React.SetStateAction<AppState>>;
+  onSaveConfig: (config: SandEvalConfig) => Promise<void>;
+  onLogin: (model: string) => void;
+  onPackage: () => void;
+  onScore: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [index, setIndex] = useState(0);
+  const selectedSkills = extractSkillMentions(props.state.prompt);
+  const rules = props.config.rules ?? [];
+
+  useEffect(() => {
+    setQuery("");
+    setIndex(0);
+  }, [props.view]);
+
+  const close = () => {
+    props.setView("commands");
+    props.onClose();
+  };
+
+  const commands: Array<{ label: string; hint: string; run: () => void }> = [
+    { label: "Run task", hint: props.state.runMode, run: () => { close(); props.onRun(); } },
+    { label: "Switch run mode", hint: props.state.runMode, run: () => props.setView("runMode") },
+    { label: "Switch model", hint: props.state.selectedModel, run: () => props.setView("model") },
+    { label: "Select arena models", hint: `${props.state.selectedModels.length} selected`, run: () => props.setView("arenaModels") },
+    { label: "Select contexts", hint: `${props.state.selectedContexts.length} selected`, run: () => props.setView("contexts") },
+    { label: "Toggle skill", hint: `${selectedSkills.length} selected`, run: () => props.setView("skills") },
+    { label: "Toggle rule", hint: summarizeRules(props.config), run: () => props.setView("rules") },
+    {
+      label: "Toggle scoring",
+      hint: props.state.score ? "on" : "off",
+      run: () => props.onSetState((current) => ({ ...current, score: !current.score, status: `Scoring: ${!current.score ? "on" : "off"}` }))
+    },
+    { label: "Switch sandbox mode", hint: props.config.sandbox?.mode ?? "local", run: () => props.setView("sandboxMode") },
+    {
+      label: "Toggle network",
+      hint: props.config.sandbox?.network === true ? "on" : "off",
+      run: () => void props.onSaveConfig({ ...props.config, sandbox: { ...props.config.sandbox, network: !(props.config.sandbox?.network === true) } })
+    },
+    {
+      label: "Toggle tool: shell",
+      hint: props.config.tools?.shell !== false ? "on" : "off",
+      run: () => void props.onSaveConfig({ ...props.config, tools: { ...props.config.tools, shell: !(props.config.tools?.shell !== false) } })
+    },
+    {
+      label: "Toggle tool: git",
+      hint: props.config.tools?.git ?? "full",
+      run: () =>
+        void props.onSaveConfig({
+          ...props.config,
+          tools: { ...props.config.tools, git: props.config.tools?.git === "off" ? "full" : "off" }
+        })
+    },
+    { label: "Open history", hint: "stored runs", run: () => { close(); props.onGo("history"); } },
+    { label: "Login provider", hint: "auth", run: () => props.setView("login") },
+    { label: "Package artifacts", hint: props.state.result ? "current result" : "no result", run: () => { close(); props.onPackage(); } },
+    { label: "Review and score", hint: props.state.result ? "current result" : "no result", run: () => { close(); props.onScore(); } },
+    { label: "Show workflow output", hint: "events", run: () => { close(); props.onGo("workflow"); } },
+    { label: "Open config summary", hint: "config", run: () => { close(); props.onGo("config"); } }
+  ];
+
+  const rows = paletteRows(props.view, query, props, commands);
+  const selected = rows[index];
+
+  useInput((input, key) => {
+    if (key.escape) {
+      if (props.view === "commands") {
+        close();
+      } else {
+        props.setView("commands");
+      }
+      return;
+    }
+    if (key.upArrow || input === "k") {
+      setIndex((value) => Math.max(0, value - 1));
+      return;
+    }
+    if (key.downArrow || input === "j") {
+      setIndex((value) => Math.min(rows.length - 1, value + 1));
+      return;
+    }
+    if (key.return && selected) {
+      selected.run();
+      return;
+    }
+    if (input === " " && selected?.multi) {
+      selected.run();
+    }
+  });
+
   return (
     <Box flexDirection="column">
-      <Text color={props.colors.muted}>Choose a workflow.</Text>
-      <Menu
-        colors={props.colors}
-        items={HOME_ITEMS.map((item) => ({ label: item.label, value: item.screen }))}
-        onSelect={(screen) => props.onSelect(screen as Screen)}
-      />
+      <Text bold color={props.colors.accent}>
+        Command Palette
+      </Text>
+      <Box>
+        <Text color={props.colors.accent}>{props.view === "commands" ? ">" : `${props.view}>`} </Text>
+        <TextInput value={query} onChange={setQuery} placeholder="Search commands" />
+      </Box>
+      <Box flexDirection="column" marginTop={1}>
+        {rows.length === 0 ? (
+          <Text color={props.colors.muted}>No matches</Text>
+        ) : (
+          rows.slice(0, 12).map((row, rowIndex) => (
+            <Text key={row.key} color={rowIndex === index ? props.colors.accent : undefined}>
+              {rowIndex === index ? ">" : " "} {row.mark ?? " "} {row.label}
+              {row.hint ? <Text color={props.colors.muted}> · {row.hint}</Text> : null}
+            </Text>
+          ))
+        )}
+      </Box>
+      <Text color={props.colors.muted}>Enter select · Esc {props.view === "commands" ? "close" : "commands"} · type to filter</Text>
     </Box>
   );
+}
+
+function paletteRows(
+  view: PaletteView,
+  query: string,
+  props: Parameters<typeof CommandPalette>[0],
+  commands: Array<{ label: string; hint: string; run: () => void }>
+): Array<{ key: string; label: string; hint?: string; mark?: string; multi?: boolean; run: () => void }> {
+  const filter = (label: string) => label.toLowerCase().includes(query.toLowerCase());
+  if (view === "commands") {
+    return commands
+      .filter((command) => filter(command.label) || command.hint.toLowerCase().includes(query.toLowerCase()))
+      .map((command) => ({ key: command.label, label: command.label, hint: command.hint, run: command.run }));
+  }
+  if (view === "runMode") {
+    return (["single", "arena"] as RunMode[]).map((mode) => ({
+      key: mode,
+      label: mode,
+      mark: props.state.runMode === mode ? "*" : " ",
+      run: () => {
+        props.onSetState((current) => ({ ...current, runMode: mode, status: `Run mode: ${mode}` }));
+        props.setView("commands");
+      }
+    }));
+  }
+  if (view === "model") {
+    return props.models.filter(filter).map((model) => ({
+      key: model,
+      label: model,
+      mark: props.state.selectedModel === model ? "*" : " ",
+      run: () => {
+        props.onSetState((current) => ({ ...current, selectedModel: model, status: `Model: ${model}` }));
+        props.setView("commands");
+      }
+    }));
+  }
+  if (view === "arenaModels") {
+    return props.models.filter(filter).map((model) => ({
+      key: model,
+      label: model,
+      mark: props.state.selectedModels.includes(model) ? "x" : " ",
+      multi: true,
+      run: () => props.onSetState((current) => ({ ...current, selectedModels: toggleValue(current.selectedModels, model) }))
+    }));
+  }
+  if (view === "contexts") {
+    return props.contexts.filter(filter).map((context) => ({
+      key: context,
+      label: `@${context}`,
+      mark: props.state.selectedContexts.includes(context) ? "x" : " ",
+      multi: true,
+      run: () => props.onSetState((current) => ({ ...current, selectedContexts: toggleValue(current.selectedContexts, context) }))
+    }));
+  }
+  if (view === "skills") {
+    const selectedSkills = extractSkillMentions(props.state.prompt);
+    return props.skillNames.filter(filter).map((skill) => ({
+      key: skill,
+      label: `@skill:${skill}`,
+      mark: selectedSkills.includes(skill) ? "x" : " ",
+      multi: true,
+      run: () => props.onSetState((current) => ({ ...current, prompt: toggleSkillMention(current.prompt, skill) }))
+    }));
+  }
+  if (view === "rules") {
+    return (props.config.rules ?? []).filter((rule) => filter(rule.name)).map((rule) => ({
+      key: rule.name,
+      label: rule.name,
+      hint: rule.description,
+      mark: rule.enabled !== false ? "x" : " ",
+      multi: true,
+      run: () =>
+        void props.onSaveConfig({
+          ...props.config,
+          rules: (props.config.rules ?? []).map((candidate) =>
+            candidate.name === rule.name ? { ...candidate, enabled: !(candidate.enabled !== false) } : candidate
+          )
+        })
+    }));
+  }
+  if (view === "sandboxMode") {
+    return (["local", "docker", "podman", "bubblewrap", "firejail", "nsjail"] as const).filter(filter).map((mode) => ({
+      key: mode,
+      label: mode,
+      mark: props.config.sandbox?.mode === mode ? "*" : " ",
+      run: () => {
+        void props.onSaveConfig({ ...props.config, sandbox: { ...props.config.sandbox, mode } });
+        props.setView("commands");
+      }
+    }));
+  }
+  if (view === "login") {
+    return props.models.filter(filter).map((model) => ({
+      key: model,
+      label: model,
+      run: () => {
+        props.onClose();
+        props.onLogin(model);
+      }
+    }));
+  }
+  return [];
 }
 
 function RunScreen(props: {
@@ -427,8 +749,8 @@ function RunScreen(props: {
 }) {
   return (
     <ChatWorkspace
-      title="Single"
-      mode="single"
+      title="Workspace"
+      mode={props.state.runMode}
       colors={props.colors}
       cwd={props.cwd}
       models={props.models}
@@ -771,10 +1093,36 @@ function ConfigScreen(props: {
   );
 }
 
-function HistoryScreen(props: { colors: Colors; history: StoredRunSummary[]; onRefresh: () => Promise<void> }) {
+function HistoryScreen(props: {
+  colors: Colors;
+  history: StoredRunSummary[];
+  onRefresh: () => Promise<void>;
+  onOpen: (item: StoredRunSummary) => void;
+}) {
+  const [index, setIndex] = useState(0);
   useEffect(() => {
     void props.onRefresh();
   }, []);
+  useEffect(() => {
+    setIndex((value) => Math.min(value, Math.max(0, props.history.length - 1)));
+  }, [props.history.length]);
+  useInput((input, key) => {
+    if (key.upArrow || input === "k") {
+      setIndex((value) => Math.max(0, value - 1));
+      return;
+    }
+    if (key.downArrow || input === "j") {
+      setIndex((value) => Math.min(props.history.length - 1, value + 1));
+      return;
+    }
+    if (input === "r") {
+      void props.onRefresh();
+      return;
+    }
+    if (key.return && props.history[index]) {
+      props.onOpen(props.history[index]);
+    }
+  });
   return (
     <Box flexDirection="column">
       <Text bold color={props.colors.accent}>
@@ -783,13 +1131,14 @@ function HistoryScreen(props: { colors: Colors; history: StoredRunSummary[]; onR
       {props.history.length === 0 ? (
         <Text color={props.colors.muted}>No stored runs yet.</Text>
       ) : (
-        props.history.map((item) => (
-          <Text key={item.id}>
-            <Text color={props.colors.accent}>{item.type}</Text> {item.startedAt} score {item.score ?? "-"}{" "}
-            {item.modelNames.join(",")} · {item.taskPreview}
+        props.history.map((item, itemIndex) => (
+          <Text key={item.id} color={itemIndex === index ? props.colors.accent : undefined}>
+            {itemIndex === index ? ">" : " "} <Text color={props.colors.accent}>{item.type}</Text> {item.startedAt} score{" "}
+            {item.score ?? "-"} {item.modelNames.join(",")} · {item.taskPreview}
           </Text>
         ))
       )}
+      <Text color={props.colors.muted}>Enter open details · r refresh · b back</Text>
     </Box>
   );
 }
@@ -856,7 +1205,7 @@ function ResultScreen(props: {
         {props.result.results.map((result) => (
           <Text key={result.run.id}>
             {result.run.modelName}: score {result.score?.score ?? "-"} · turns {result.run.turns} · tokens{" "}
-            {result.run.usage.totalTokens ?? "-"}
+            {result.run.usage.totalTokens ?? "-"} · workflow {result.run.workflowEvents?.length ?? 0}
           </Text>
         ))}
         <Text color={props.colors.muted}>{props.result.reportPaths?.markdownPath}</Text>
@@ -881,6 +1230,9 @@ function ResultScreen(props: {
       <Text>
         {report.run.modelName}: score {report.score?.score ?? "-"} · turns {report.run.turns} · tokens{" "}
         {report.run.usage.totalTokens ?? "-"} · duration {report.run.durationMs}ms
+      </Text>
+      <Text color={props.colors.muted}>
+        workflow {report.run.workflowAdapter ?? "none"} · events {report.run.workflowEvents?.length ?? 0}
       </Text>
       <Text>{report.run.finish?.summary ?? report.run.finalContent ?? "No summary."}</Text>
       <Text color={props.colors.muted}>{report.reportPaths?.markdownPath}</Text>
@@ -928,8 +1280,47 @@ function ResultActions(props: {
   );
 }
 
-function LiveRunPanel(props: { colors: Colors; status: string; events: RunEvent[] }) {
-  const visibleEvents = props.events.slice(-13);
+function PlanApprovalScreen(props: {
+  colors: Colors;
+  plan?: RunPlan;
+  feedback: string;
+  setFeedback: (feedback: string) => void;
+  onApprove: () => void;
+  onRevise: () => void;
+  onCancel: () => void;
+}) {
+  useInput((input, key) => {
+    if (input === "a") {
+      props.onApprove();
+      return;
+    }
+    if (input === "c" || key.escape) {
+      props.onCancel();
+      return;
+    }
+    if (key.return && props.feedback.trim()) {
+      props.onRevise();
+    }
+  });
+
+  return (
+    <Box flexDirection="column">
+      <Text bold color={props.colors.accent}>
+        Approve Plan
+      </Text>
+      <Text>{truncate(props.plan?.content ?? "No plan content.", 2400)}</Text>
+      <Box marginTop={1}>
+        <Text color={props.colors.accent}>Feedback: </Text>
+        <TextInput value={props.feedback} onChange={props.setFeedback} />
+      </Box>
+      <Text color={props.colors.muted}>a approve · Enter revise with feedback · c cancel</Text>
+    </Box>
+  );
+}
+
+function LiveRunPanel(props: { colors: Colors; status: string; events: RunEvent[]; config: SandEvalConfig }) {
+  const maxEvents = props.config.workflow?.maxLiveEvents ?? 40;
+  const visibleEvents = compactRunEvents(props.events, props.config).slice(-Math.min(13, maxEvents));
   return (
     <Box flexDirection="column">
       <Box marginBottom={1}>
@@ -956,6 +1347,117 @@ function LiveRunPanel(props: { colors: Colors; status: string; events: RunEvent[
       </Box>
     </Box>
   );
+}
+
+function WorkflowScreen(props: { colors: Colors; result?: RunReport | ArenaReport; events: RunEvent[]; config: SandEvalConfig }) {
+  const workflowEvents = compactWorkflowEvents(collectWorkflowEvents(props.result), props.config).slice(-(props.config.workflow?.maxLiveEvents ?? 40));
+  const events = compactRunEvents(props.events, props.config).slice(-30);
+  const commandCount =
+    props.result && "results" in props.result
+      ? props.result.results.reduce((sum, result) => sum + result.run.commands.length, 0)
+      : props.result
+        ? (props.result as RunReport).run.commands.length
+        : 0;
+  return (
+    <Box flexDirection="column">
+      <Text bold color={props.colors.accent}>
+        Workflow Output
+      </Text>
+      <Text color={props.colors.muted}>
+        Structured events: {workflowEvents.length} · Commands captured: {commandCount}
+      </Text>
+      {workflowEvents.length > 0 ? (
+        workflowEvents.map((event) => (
+          <Text key={event.id} color={workflowEventColor(props.colors, event)}>
+            {workflowEventMark(event)} {event.adapter} · {event.kind} · {event.title}
+            {event.count && event.count > 1 ? ` x${event.count}` : ""}
+            {event.message ? ` - ${truncate(event.message.replace(/\s+/g, " "), 160)}` : ""}
+          </Text>
+        ))
+      ) : events.length === 0 ? (
+        <Text color={props.colors.muted}>No workflow events yet.</Text>
+      ) : (
+        events.map((event, index) => (
+          <Text key={`${event.at}-${index}`} color={eventColor(props.colors, event)}>
+            {eventMark(event)} {formatTime(event.at)} {event.modelName ? `[${event.modelName}] ` : ""}
+            {event.message}
+          </Text>
+        ))
+      )}
+    </Box>
+  );
+}
+
+function collectWorkflowEvents(result?: RunReport | ArenaReport): WorkflowEvent[] {
+  if (!result) {
+    return [];
+  }
+  if ("results" in result) {
+    return result.results.flatMap((item) => item.run.workflowEvents ?? []);
+  }
+  return result.run.workflowEvents ?? [];
+}
+
+function compactWorkflowEvents(events: WorkflowEvent[], config: SandEvalConfig): WorkflowEvent[] {
+  if (config.workflow?.collapseSimilar === false) {
+    return events;
+  }
+  const compacted: WorkflowEvent[] = [];
+  for (const event of events) {
+    const previous = compacted.at(-1);
+    if (previous && workflowFoldKey(previous) === workflowFoldKey(event)) {
+      compacted[compacted.length - 1] = {
+        ...previous,
+        count: (previous.count ?? 1) + 1,
+        message: summarizeFoldedWorkflow(previous, event)
+      };
+    } else {
+      compacted.push(event);
+    }
+  }
+  return compacted;
+}
+
+function compactRunEvents(events: RunEvent[], config: SandEvalConfig): RunEvent[] {
+  if (config.workflow?.collapseSimilar === false) {
+    return events;
+  }
+  const compacted: RunEvent[] = [];
+  for (const event of events) {
+    const previous = compacted.at(-1);
+    if (previous && runFoldKey(previous) === runFoldKey(event)) {
+      const count = Number(previous.detail?.count ?? 1) + 1;
+      compacted[compacted.length - 1] = {
+        ...previous,
+        message: `${previous.message.replace(/\s+x\d+$/, "")} x${count}`,
+        detail: { ...previous.detail, count }
+      };
+    } else {
+      compacted.push(event);
+    }
+  }
+  return compacted;
+}
+
+function workflowFoldKey(event: WorkflowEvent): string {
+  return [event.adapter, event.kind, event.phase, event.toolName ?? "", event.command ? "command" : "", event.path ? "path" : ""].join("|");
+}
+
+function runFoldKey(event: RunEvent): string {
+  return [event.type, event.modelName ?? "", event.toolName ?? "", event.detail?.phase ?? "", event.level ?? ""].join("|");
+}
+
+function summarizeFoldedWorkflow(previous: WorkflowEvent, current: WorkflowEvent): string | undefined {
+  if (previous.kind === "file-change") {
+    return `${(previous.count ?? 1) + 1} file changes`;
+  }
+  if (previous.kind === "tool-call") {
+    return `${(previous.count ?? 1) + 1} ${previous.toolName ?? "tool"} calls`;
+  }
+  if (previous.kind === "command") {
+    return `${(previous.count ?? 1) + 1} commands`;
+  }
+  return current.message ?? previous.message;
 }
 
 function ErrorScreen(props: { colors: Colors; error: string }) {
@@ -1107,6 +1609,31 @@ function getMentionedContexts(prompt: string, contexts: string[]): string[] {
   return extractContextMentions(prompt).filter((context) => contexts.includes(context));
 }
 
+function toggleSkillMention(prompt: string, skill: string): string {
+  const escaped = escapeRegExp(skill);
+  const pattern = new RegExp(`(^|\\s)@skill:(?:\\{${escaped}\\}|${escaped})(?=\\s|$)`);
+  if (pattern.test(prompt)) {
+    return prompt.replace(pattern, (match, prefix: string) => prefix).replace(/\s{2,}/g, " ").trimStart();
+  }
+  return prompt.trim() ? `${prompt} @skill:${skill}` : `@skill:${skill}`;
+}
+
+function statusSummary(state: AppState, config: SandEvalConfig): string {
+  const model = state.runMode === "arena" ? `${state.selectedModels.length} models` : state.selectedModel;
+  const contexts = state.selectedContexts.length ? `ctx${state.selectedContexts.length}` : "ctx0";
+  const skills = extractSkillMentions(state.prompt).length;
+  const sandbox = config.sandbox?.mode ?? "local";
+  const network = config.sandbox?.network === true ? "net" : "no-net";
+  const shell = config.tools?.shell !== false ? "sh" : "no-sh";
+  const git = config.tools?.git === "off" ? "no-git" : `git-${config.tools?.git ?? "full"}`;
+  const scoring = state.score ? "score" : "no-score";
+  return `${state.runMode} · ${truncate(model, 28)} · ${contexts} sk${skills} rl${activeRules(config).length} · ${scoring} · ${sandbox}/${network} · ${shell} ${git}`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function formatCwd(cwd: string): string {
   const home = process.env.HOME;
   if (home && cwd.startsWith(home)) {
@@ -1150,6 +1677,32 @@ function eventColor(colors: Colors, event: RunEvent): Colors[keyof Colors] | und
     return colors.ok;
   }
   if (event.type === "tool-start" || event.type === "model-turn-start" || event.type === "score-start") {
+    return colors.accent;
+  }
+  return undefined;
+}
+
+function workflowEventMark(event: WorkflowEvent): string {
+  if (event.level === "error" || event.kind === "error") {
+    return "x";
+  }
+  if (event.level === "success" || event.kind === "result") {
+    return "+";
+  }
+  if (event.kind === "command" || event.kind === "tool-call") {
+    return ">";
+  }
+  return "-";
+}
+
+function workflowEventColor(colors: Colors, event: WorkflowEvent): Colors[keyof Colors] | undefined {
+  if (event.level === "error" || event.kind === "error") {
+    return colors.danger;
+  }
+  if (event.level === "success" || event.kind === "result") {
+    return colors.ok;
+  }
+  if (event.kind === "command" || event.kind === "tool-call" || event.kind === "file-change") {
     return colors.accent;
   }
   return undefined;

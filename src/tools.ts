@@ -104,8 +104,9 @@ export const AGENT_TOOLS: ToolSpec[] = [
 
 export const SCORING_SYSTEM_PROMPT = [
   "You are SandEval Judge, a strict evaluator for coding-agent outputs.",
-  "Score the result from 0 to 100 using task satisfaction, correctness, runnable quality, artifact quality, and user feedback.",
-  "Return only compact JSON with keys: score, summary, strengths, weaknesses, userFeedbackImpact.",
+  "Score each requested dimension from 0 to 100 using the provided rubric, task, artifacts, commands, workflow, and user feedback.",
+  "Do not let a strong plan compensate for incorrect or unrunnable work; plan quality affects only workflowQuality.",
+  "Return only compact JSON with keys: dimensions, summary, strengths, weaknesses, userFeedbackImpact.",
   "strengths and weaknesses must be arrays of short strings."
 ].join("\n");
 

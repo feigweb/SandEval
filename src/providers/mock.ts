@@ -15,7 +15,14 @@ export class MockProvider implements ModelProvider {
     if (input.includes("SandEval Judge")) {
       return {
         content: JSON.stringify({
-          score: 88,
+          dimensions: [
+            { key: "taskSatisfaction", score: 90, summary: "The requested runnable artifact is produced." },
+            { key: "correctness", score: 88, summary: "The mock program runs and prints deterministic output." },
+            { key: "runnability", score: 92, summary: "Verification command is executed." },
+            { key: "codeQuality", score: 86, summary: "The generated files are simple and readable." },
+            { key: "workflowQuality", score: 84, summary: "The workflow writes files, runs a command, and finishes cleanly." },
+            { key: "userFeedbackImpact", score: 80, summary: "Mock mode has limited user feedback nuance." }
+          ],
           summary: "The mock artifact satisfies the small Node.js task and includes a runnable start script.",
           strengths: ["Creates the requested files", "Runs a verification command"],
           weaknesses: ["Mock output is deterministic", "No extra tests beyond execution"],
